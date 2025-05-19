@@ -1,10 +1,10 @@
 import pandas as pd, io, asyncio, re
 from pyodide.http import pyfetch
 from js import document
-from pyodide.ffi import create_proxy           # ← explicit import
-import plotly.express as px
-from pyscript import display
+from pyodide.ffi import create_proxy          # modern location
+import pyodide                                # ← add
 
+pyodide.create_proxy = create_proxy           # any old call now resolves
 # ── CSV feeds ────────────────────────────────────────────────────────────────
 STACK_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv"
 HOLD_DROP = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?gid=145083070&single=true&output=csv"
@@ -84,7 +84,7 @@ async def main():
     await populate_controls(df)
     draw(df)
 
-    cb = create_proxy(lambda evt: draw(df))      # ← use create_proxy from ffi
+    cb = create_proxy(lambda evt: draw(df))            # modern call
     document.getElementById("xSelect").addEventListener("change", cb)
     document.getElementById("ySelect").addEventListener("change", cb)
     for chk in document.querySelectorAll("#ampList input"):
