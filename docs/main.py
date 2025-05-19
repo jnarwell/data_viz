@@ -1,7 +1,7 @@
 import pandas as pd, io, asyncio, re
 from pyodide.http import pyfetch
 from js import document
-import pyodide
+from pyodide.ffi import create_proxy
 import plotly.express as px
 from pyscript import display
 
@@ -83,7 +83,7 @@ async def main():
     await populate_controls(df)
     update_plot(df)
 
-    proxy = pyodide.create_proxy(lambda evt: update_plot(df))
+    proxy = create_proxy(lambda evt: update_plot(df))
     document.getElementById("xSelect").addEventListener("change", proxy)
     document.getElementById("ySelect").addEventListener("change", proxy)
     for chk in document.querySelectorAll("#ampList input"):
