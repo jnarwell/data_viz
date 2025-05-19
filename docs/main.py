@@ -2,7 +2,9 @@ import pandas as pd, io, asyncio, re
 from pyodide.http import pyfetch
 from js import document
 from pyodide.ffi import create_proxy          # modern location
+import plotly.express as px           # ← put this line right here
 import pyodide                                # ← add
+
 
 pyodide.create_proxy = create_proxy           # any old call now resolves
 # ── CSV feeds ────────────────────────────────────────────────────────────────
