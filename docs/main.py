@@ -4,10 +4,9 @@ from js import document
 
 # ------------------------------------------------------------------
 CSV_URLS = [
-    # Hold / Drop tab (gid 145083070)
+    # Hold / Drop
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?gid=145083070&single=true&output=csv",
-
-    # Stack tab (gid 0)
+    # Stack (gid = 0)
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv",
 ]
 
@@ -62,18 +61,30 @@ def collect_matrix(dfs: list[pd.DataFrame]) -> dict[str, set[str]]:
     return table
 
 
-def render_table(matrix: dict[str, set[str]]):
-    thead = document.querySelector("#ampTable thead")
-    tbody = document.querySelector("#ampTable tbody")
-    thead.innerHTML = tbody.innerHTML = ""  # clear any previous content
+def ensure_section(table_el, tag):
+    sec = table_el.querySelector(tag)
+    if sec is None:
+        sec = document.createElement(tag)
+        table_el.appendChild(sec)
+    return sec
 
-    # header
+
+def render_table(matrix: dict[str, set[str]]):
+    table_el = document.getElementById("ampTable")
+    if table_el is None:
+        raise RuntimeError("table with id='ampTable' not found")
+
+    thead = ensure_section(table_el, "thead")
+    tbody = ensure_section(table_el, "tbody")
+    thead.innerHTML = tbody.innerHTML = ""
+
+    # header row
+    hdr_cells = ["<th>Amphora</th>"] + [f"<th>{c}</th>" for c in CATEGORIES]
     hdr = document.createElement("tr")
-    hdr_inner = ["<th>Amphora</th>"] + [f"<th>{c}</th>" for c in CATEGORIES]
-    hdr.innerHTML = "".join(hdr_inner)
+    hdr.innerHTML = "".join(hdr_cells)
     thead.appendChild(hdr)
 
-    # rows
+    # data rows
     for name in sorted(matrix, key=str.casefold):
         cells = [f"<td>{name}</td>"]
         for cat in CATEGORIES:
@@ -84,14 +95,13 @@ def render_table(matrix: dict[str, set[str]]):
 
 
 async def main():
-    table_div = document.getElementById("ampTable")
-    table_div.setAttribute("data-loading", "true")  # minimal spinner cue
-
     try:
-        dfs     = await asyncio.gather(*(fetch_csv(u) for u in CSV_URLS))
-        matrix  = collect_matrix(dfs)
+        dfs    = await asyncio.gather(*(fetch_csv(u) for u in CSV_URLS))
+        matrix = collect_matrix(dfs)
         render_table(matrix)
     except Exception as e:
-        table_div.outerHTML = f"<p class='text-danger'>Error: {e}</p>"
+        table_el = document.getElementById("ampTable")
+        if table_el:
+            table_el.outerHTML = f"<p class='text-danger'>Error: {e}</p>"
 
 asyncio.ensure_future(main())
