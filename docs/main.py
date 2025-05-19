@@ -2,75 +2,85 @@ import pandas as pd, io, re, asyncio
 from pyodide.http import pyfetch
 from js import document
 
-# ─── CSV feeds ────────────────────────────────────────────────────────────────
-CSV_URLS = [
-    # Hold / Drop tab
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?gid=145083070&single=true&output=csv",
-    # Stack tab (gid=0)
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv",
-]
+# ─── Published CSV feeds ──────────────────────────────────────────────────────
+STACK_CSV = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
+    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv"
+)
+HOLD_DROP_CSV = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
+    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?"
+    "gid=145083070&single=true&output=csv"
+)
 
-CATEGORIES  = ["Stack Rect", "Stack Hex", "Hold", "Drop"]
-SUFFIX_RE   = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
-TENS_RE     = re.compile(r"tensile", re.I)        # columns containing tensile
-TEST_MAP    = [
-    (re.compile(r"drop", re.I), "Drop"),
-    (re.compile(r"hold", re.I), "Hold"),
-    (re.compile(r"rect", re.I), "Stack Rect"),
-    (re.compile(r"hex",  re.I), "Stack Hex"),
-]
+CSV_FEEDS = [STACK_CSV, HOLD_DROP_CSV]
+
+CATEGORIES = ["Stack Rect", "Stack Hex", "Hold", "Drop"]
+SUFFIX_RE  = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
+TENS_RE    = re.compile(r"tensile", re.I)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 async def fetch_csv(url: str) -> pd.DataFrame:
-    csv_text = await (await pyfetch(url)).text()
-    return pd.read_csv(io.StringIO(csv_text))
+    text = await (await pyfetch(url)).text()
+    return pd.read_csv(io.StringIO(text))
 
 
 def clean_name(raw: str) -> str:
     return SUFFIX_RE.sub("", raw.strip())
 
 
-def detect_test(row) -> str | None:
-    for col in ("Test", "Arrangement"):
-        if col in row and pd.notna(row[col]):
-            for regex, cat in TEST_MAP:
-                if regex.search(str(row[col])):
-                    return cat
-    return None
-
-
-def has_tensile(row, tensile_cols) -> bool:
-    for col in tensile_cols:
+def has_tensile(row, tens_cols) -> bool:
+    for col in tens_cols:
         val = pd.to_numeric(row[col], errors="coerce")
         if pd.notna(val):
             return True
     return False
 
 
-def build_matrix(dfs: list[pd.DataFrame]) -> dict[str, set[str]]:
+def detect_stack_cat(arrangement: str | float) -> str | None:
+    if isinstance(arrangement, str):
+        a = arrangement.lower()
+        if "rect" in a:
+            return "Stack Rect"
+        if "hex" in a:
+            return "Stack Hex"
+    return None
+
+
+def detect_hd_cat(test_val: str | float) -> str | None:
+    if isinstance(test_val, str):
+        t = test_val.lower()
+        if t.startswith("hold"):
+            return "Hold"
+        if t.startswith("drop"):
+            return "Drop"
+    return None
+
+
+def build_matrix(stack_df: pd.DataFrame, hd_df: pd.DataFrame) -> dict[str, set[str]]:
     table: dict[str, set[str]] = {}
 
-    for df in dfs:
-        amph_col = next((c for c in df.columns if c.lower().startswith("amphora")), None)
-        if not amph_col:
-            continue
+    # --- Stack sheet ---------------------------------------------------------
+    amph_col = next((c for c in stack_df.columns if c.lower().startswith("amphora")), None)
+    tens_cols = [c for c in stack_df.columns if TENS_RE.search(c)]
+    if amph_col and tens_cols:
+        for _, row in stack_df.iterrows():
+            name = clean_name(str(row[amph_col]))
+            cat  = detect_stack_cat(row.get("Arrangement", ""))
+            if name and cat and has_tensile(row, tens_cols):
+                table.setdefault(name, set()).add(cat)
 
-        tens_cols = [c for c in df.columns if TENS_RE.search(c)]
-        if not tens_cols:
-            continue   # sheet has no tensile data at all
-
-        for _, row in df.iterrows():
-            raw_name = str(row[amph_col]) if pd.notna(row[amph_col]) else ""
-            name = clean_name(raw_name)
-            if not name:
-                continue
-
-            cat = detect_test(row)
-            if not cat:
-                continue
-
-            if has_tensile(row, tens_cols):
+    # --- Hold / Drop sheet ---------------------------------------------------
+    amph_col = next((c for c in hd_df.columns if c.lower().startswith("amphora")), None)
+    tens_cols = [c for c in hd_df.columns if TENS_RE.search(c)]
+    if amph_col and tens_cols:
+        for _, row in hd_df.iterrows():
+            name = clean_name(str(row[amph_col]))
+            cat  = detect_hd_cat(row.get("Test", ""))
+            if name and cat and has_tensile(row, tens_cols):
                 table.setdefault(name, set()).add(cat)
 
     return table
@@ -91,12 +101,10 @@ def render(matrix: dict[str, set[str]]):
     tbody = ensure("tbody", table)
     thead.innerHTML = tbody.innerHTML = ""
 
-    # header
     hdr = document.createElement("tr")
     hdr.innerHTML = "<th>Amphora</th>" + "".join(f"<th>{c}</th>" for c in CATEGORIES)
     thead.appendChild(hdr)
 
-    # rows
     for name in sorted(matrix, key=str.casefold):
         row = document.createElement("tr")
         cells = [f"<td>{name}</td>"] + [
@@ -112,8 +120,8 @@ async def main():
     tbl.innerHTML = "<caption>Loading…</caption>"
 
     try:
-        dfs     = await asyncio.gather(*(fetch_csv(u) for u in CSV_URLS))
-        matrix  = build_matrix(dfs)
+        stack_df, hd_df = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
+        matrix = build_matrix(stack_df, hd_df)
         render(matrix)
     except Exception as e:
         tbl.outerHTML = f"<p class='text-danger'>Error: {e}</p>"
