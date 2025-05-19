@@ -1,8 +1,8 @@
-import pandas as pd, io, re, asyncio
+import pandas as pd, io, asyncio
 from pyodide.http import pyfetch
 from js import document
 
-# ─── Published CSV feeds ──────────────────────────────────────────────────────
+# ── CSV feeds ────────────────────────────────────────────────────────────────
 STACK_CSV = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
@@ -14,107 +14,73 @@ HOLD_DROP_CSV = (
     "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?"
     "gid=145083070&single=true&output=csv"
 )
-
 CSV_FEEDS = [STACK_CSV, HOLD_DROP_CSV]
 
+TENS_COL = "Max Tensile (MPa)"      # ← exact header to look for
 CATEGORIES = ["Stack Rect", "Stack Hex", "Hold", "Drop"]
-SUFFIX_RE  = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
-TENS_RE    = re.compile(r"tensile", re.I)
-# ──────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 async def fetch_csv(url: str) -> pd.DataFrame:
-    text = await (await pyfetch(url)).text()
-    return pd.read_csv(io.StringIO(text))
+    txt = await (await pyfetch(url)).text()
+    return pd.read_csv(io.StringIO(txt))
 
 
-def clean_name(raw: str) -> str:
-    return SUFFIX_RE.sub("", raw.strip())
-
-
-def has_tensile(row, tens_cols) -> bool:
-    for col in tens_cols:
-        val = pd.to_numeric(row[col], errors="coerce")
-        if pd.notna(val):
-            return True
-    return False
-
-
-def detect_stack_cat(arrangement: str | float) -> str | None:
-    if isinstance(arrangement, str):
-        a = arrangement.lower()
-        if "rect" in a:
-            return "Stack Rect"
-        if "hex" in a:
-            return "Stack Hex"
+def stack_cat(arrangement: str) -> str | None:
+    a = arrangement.lower()
+    if a == "rect": return "Stack Rect"
+    if a == "hex":  return "Stack Hex"
     return None
 
 
-def detect_hd_cat(test_val: str | float) -> str | None:
-    if isinstance(test_val, str):
-        t = test_val.lower()
-        if t.startswith("hold"):
-            return "Hold"
-        if t.startswith("drop"):
-            return "Drop"
+def hd_cat(test_val: str) -> str | None:
+    if test_val == "Hold": return "Hold"
+    if test_val == "Drop": return "Drop"
     return None
 
 
 def build_matrix(stack_df: pd.DataFrame, hd_df: pd.DataFrame) -> dict[str, set[str]]:
     table: dict[str, set[str]] = {}
 
-    # --- Stack sheet ---------------------------------------------------------
-    amph_col = next((c for c in stack_df.columns if c.lower().startswith("amphora")), None)
-    tens_cols = [c for c in stack_df.columns if TENS_RE.search(c)]
-    if amph_col and tens_cols:
-        for _, row in stack_df.iterrows():
-            name = clean_name(str(row[amph_col]))
-            cat  = detect_stack_cat(row.get("Arrangement", ""))
-            if name and cat and has_tensile(row, tens_cols):
-                table.setdefault(name, set()).add(cat)
+    # Stack sheet
+    for _, row in stack_df.iterrows():
+        name = str(row["Amphorae"]).strip()
+        cat  = stack_cat(str(row.get("Arrangement", "")).strip())
+        val  = pd.to_numeric(row.get(TENS_COL, ""), errors="coerce")
+        if name and cat and pd.notna(val):
+            table.setdefault(name, set()).add(cat)
 
-    # --- Hold / Drop sheet ---------------------------------------------------
-    amph_col = next((c for c in hd_df.columns if c.lower().startswith("amphora")), None)
-    tens_cols = [c for c in hd_df.columns if TENS_RE.search(c)]
-    if amph_col and tens_cols:
-        for _, row in hd_df.iterrows():
-            name = clean_name(str(row[amph_col]))
-            cat  = detect_hd_cat(row.get("Test", ""))
-            if name and cat and has_tensile(row, tens_cols):
-                table.setdefault(name, set()).add(cat)
+    # Hold / Drop sheet
+    for _, row in hd_df.iterrows():
+        name = str(row["Amphorae"]).strip()
+        cat  = hd_cat(str(row.get("Test", "")).strip())
+        val  = pd.to_numeric(row.get(TENS_COL, ""), errors="coerce")
+        if name and cat and pd.notna(val):
+            table.setdefault(name, set()).add(cat)
 
     return table
 
 
-# ─── DOM helpers ──────────────────────────────────────────────────────────────
-def ensure(tag, parent):
-    el = parent.querySelector(tag)
-    if el is None:
-        el = document.createElement(tag)
-        parent.appendChild(el)
-    return el
-
-
 def render(matrix: dict[str, set[str]]):
-    table = document.getElementById("ampTable")
-    thead = ensure("thead", table)
-    tbody = ensure("tbody", table)
-    thead.innerHTML = tbody.innerHTML = ""
+    tbl   = document.getElementById("ampTable")
+    tbl.innerHTML = ""             # clear placeholder
 
-    hdr = document.createElement("tr")
-    hdr.innerHTML = "<th>Amphora</th>" + "".join(f"<th>{c}</th>" for c in CATEGORIES)
-    thead.appendChild(hdr)
+    thead = document.createElement("thead")
+    hdr   = "<th>Amphora</th>" + "".join(f"<th>{c}</th>" for c in CATEGORIES)
+    thead.innerHTML = f"<tr>{hdr}</tr>"
+    tbl.appendChild(thead)
 
+    tbody = document.createElement("tbody")
     for name in sorted(matrix, key=str.casefold):
-        row = document.createElement("tr")
         cells = [f"<td>{name}</td>"] + [
             "<td>✓</td>" if cat in matrix[name] else "<td></td>" for cat in CATEGORIES
         ]
+        row = document.createElement("tr")
         row.innerHTML = "".join(cells)
         tbody.appendChild(row)
+    tbl.appendChild(tbody)
 
 
-# ─── main coroutine ───────────────────────────────────────────────────────────
 async def main():
     tbl = document.getElementById("ampTable")
     tbl.innerHTML = "<caption>Loading…</caption>"
