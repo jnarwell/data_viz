@@ -1,8 +1,8 @@
-import pandas as pd, io, asyncio
+import pandas as pd, io, re, asyncio
 from pyodide.http import pyfetch
 from js import document
 
-# ── CSV feeds ────────────────────────────────────────────────────────────────
+# ── Published CSV feeds ──────────────────────────────────────────────────────
 STACK_CSV = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
@@ -16,54 +16,63 @@ HOLD_DROP_CSV = (
 )
 CSV_FEEDS = [STACK_CSV, HOLD_DROP_CSV]
 
-TENS_COL = "Max Tensile (MPa)"      # ← exact header to look for
 CATEGORIES = ["Stack Rect", "Stack Hex", "Hold", "Drop"]
-# ─────────────────────────────────────────────────────────────────────────────
+SUFFIX_RE  = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
+TENSILE_RE = re.compile(r"max.*tensile", re.I)   # any header with both words
 
-
+# ── Helpers ──────────────────────────────────────────────────────────────────
 async def fetch_csv(url: str) -> pd.DataFrame:
     txt = await (await pyfetch(url)).text()
     return pd.read_csv(io.StringIO(txt))
 
-
-def stack_cat(arrangement: str) -> str | None:
-    a = arrangement.lower()
-    if a == "rect": return "Stack Rect"
-    if a == "hex":  return "Stack Hex"
+def find_tensile_col(df: pd.DataFrame) -> str | None:
+    for c in df.columns:
+        if TENSILE_RE.search(c):
+            return c
     return None
 
-
-def hd_cat(test_val: str) -> str | None:
-    if test_val == "Hold": return "Hold"
-    if test_val == "Drop": return "Drop"
+def category_from_test(test: str) -> str | None:
+    t = test.lower()
+    if "stack" in t and "rect" in t:
+        return "Stack Rect"
+    if "stack" in t and "hex" in t:
+        return "Stack Hex"
+    if t.startswith("hold"):
+        return "Hold"
+    if t.startswith("drop"):
+        return "Drop"
     return None
 
+def has_numeric(val) -> bool:
+    return pd.notna(pd.to_numeric(val, errors="coerce"))
 
-def build_matrix(stack_df: pd.DataFrame, hd_df: pd.DataFrame) -> dict[str, set[str]]:
+def build_matrix(dfs: list[pd.DataFrame]) -> dict[str, set[str]]:
     table: dict[str, set[str]] = {}
 
-    # Stack sheet
-    for _, row in stack_df.iterrows():
-        name = str(row["Amphorae"]).strip()
-        cat  = stack_cat(str(row.get("Arrangement", "")).strip())
-        val  = pd.to_numeric(row.get(TENS_COL, ""), errors="coerce")
-        if name and cat and pd.notna(val):
-            table.setdefault(name, set()).add(cat)
+    for df in dfs:
+        # locate required columns
+        if "Test" not in df.columns:
+            continue
+        a_col = next((c for c in df.columns if c.lower().startswith("amphora")), None)
+        t_col = find_tensile_col(df)
+        if not a_col or not t_col:
+            continue
 
-    # Hold / Drop sheet
-    for _, row in hd_df.iterrows():
-        name = str(row["Amphorae"]).strip()
-        cat  = hd_cat(str(row.get("Test", "")).strip())
-        val  = pd.to_numeric(row.get(TENS_COL, ""), errors="coerce")
-        if name and cat and pd.notna(val):
-            table.setdefault(name, set()).add(cat)
+        for _, row in df.iterrows():
+            test_val = str(row["Test"]).strip()
+            cat      = category_from_test(test_val)
+            name     = SUFFIX_RE.sub("", str(row[a_col]).strip())
+            if not (name and cat):
+                continue
+            if has_numeric(row[t_col]):
+                table.setdefault(name, set()).add(cat)
 
     return table
 
-
+# ── DOM rendering ────────────────────────────────────────────────────────────
 def render(matrix: dict[str, set[str]]):
-    tbl   = document.getElementById("ampTable")
-    tbl.innerHTML = ""             # clear placeholder
+    tbl = document.getElementById("ampTable")
+    tbl.innerHTML = ""  # clear placeholder
 
     thead = document.createElement("thead")
     hdr   = "<th>Amphora</th>" + "".join(f"<th>{c}</th>" for c in CATEGORIES)
@@ -80,20 +89,16 @@ def render(matrix: dict[str, set[str]]):
         tbody.appendChild(row)
     tbl.appendChild(tbody)
 
-
+# ── main coroutine ───────────────────────────────────────────────────────────
 async def main():
     tbl = document.getElementById("ampTable")
     tbl.innerHTML = "<caption>Loading…</caption>"
 
     try:
-        stack_df, hd_df = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
-        print("Stack columns", list(stack_df.columns))
-        print("Hold/Drop cols", list(hd_df.columns))
-
-        matrix = build_matrix(stack_df, hd_df)
+        dfs     = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
+        matrix  = build_matrix(dfs)
         render(matrix)
     except Exception as e:
         tbl.outerHTML = f"<p class='text-danger'>Error: {e}</p>"
 
 asyncio.ensure_future(main())
-
