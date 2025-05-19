@@ -1,49 +1,56 @@
-import pandas as pd, json, re, asyncio
+import pandas as pd, io, asyncio
 from pyodide.http import pyfetch
-from pyscript import display, js
+from js import document   # manipulate DOM
 
-SHEET_ID = "1uQLwPGeS3zxpXQAcc5_nQDSoFH79cYlEeMa0Hbz5H_o"
-TABS = [
-    ("0",         "chart1", "Stack / Summary"),
-    ("145083070", "chart2", "Hold-Drop"),
-]
+# ------------------------------------------------------------------
+CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
+    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv"
+)
+# ------------------------------------------------------------------
 
-async def fetch_tab(gid: str) -> pd.DataFrame:
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?gid={gid}&tqx=out:json"
-    r = await pyfetch(url)
-    txt = await r.text()
-    body = re.sub(r"^.*?\\(", "", txt)[:-2]
-    data = json.loads(body)
+async def fetch_csv(url: str) -> pd.DataFrame:
+    """Download CSV text and return DataFrame."""
+    resp = await pyfetch(url)
+    text = await resp.text()
+    return pd.read_csv(io.StringIO(text))
 
-    cols = [(c.get("label") or f"c{i}") for i, c in enumerate(data["table"]["cols"])]
-    rows = [[cell.get("v") if cell else None for cell in r["c"]] for r in data["table"]["rows"]]
-    df = pd.DataFrame(rows, columns=cols)
+def detect_name_column(df: pd.DataFrame) -> str | None:
+    """Return first non-numeric column name."""
+    for c in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            return c
+    return None
 
-    for c in df.columns:                       # numeric coercion
-        if df[c].dtype == object:
-            df[c] = pd.to_numeric(df[c].str.replace(",", ""), errors="ignore")
-    return df
+async def main():
+    ul = document.getElementById("ampList")
+    ul.innerHTML = "loading…"
 
-def plot_js(df: pd.DataFrame, x: str, y: str, target: str, title: str):
-    """Use global Plotly JS to keep PyScript light."""
-    x_vals, y_vals = df[x].tolist(), df[y].tolist()
-    trace = js.Object.fromEntries([
-        ("x", x_vals), ("y", y_vals),
-        ("mode", "markers"), ("type", "scatter"),
-        ("marker", js.Object.fromEntries([("size", 8)])),
-    ])
-    layout = js.Object.fromEntries([("title", title)])
-    js.Plotly.newPlot(target, js.Array(trace), layout)
-
-async def render(gid: str, target: str, label: str):
     try:
-        df = await fetch_tab(gid)
-        numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-        if len(numeric) < 2:
-            display("No numeric columns.", target=target)
-            return
-        plot_js(df, numeric[0], numeric[1], target, f"{label}: {numeric[0]} vs {numeric[1]}")
-    except Exception as e:
-        display(f"❌ {e}", target=target)
+        df = await fetch_csv(CSV_URL)
+        name_col = detect_name_column(df)
 
-asyncio.ensure_future(asyncio.gather(*(render(*t) for t in TABS)))
+        if not name_col:
+            ul.innerHTML = "Unable to find a text column in CSV."
+            return
+
+        names = (
+            df[name_col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+        )
+        names.sort()
+
+        ul.innerHTML = ""  # clear loading text
+        for n in names:
+            li = document.createElement("li")
+            li.textContent = n
+            ul.appendChild(li)
+
+    except Exception as e:
+        ul.innerHTML = f"Error loading CSV: {e}"
+
+asyncio.ensure_future(main())
