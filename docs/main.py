@@ -1,87 +1,55 @@
-# main.py
-
 import pandas as pd
 import plotly.express as px
-from js import document
+from js import window
+from pyodide.ffi import create_proxy
 
-# --- 1) Load & tidy data once on startup ---
-STACK_CSV = 'amphorae_comp - stack.csv'
-HD_CSV    = 'amphorae_comp - hold-drop.csv'
+# load & prep
+stack_df = pd.read_csv("amphorae_comp - stack.csv")
+hd_df    = pd.read_csv("amphorae_comp - hold-drop.csv")
 
-def load_and_prepare():
-    s = pd.read_csv(STACK_CSV).rename(columns=str.strip)
-    h = pd.read_csv(HD_CSV   ).rename(columns=str.strip)
+def clean(col): return pd.to_numeric(col, errors="coerce")
 
-    # coerce numeric columns
-    for col in ['Mass (Empty) (kg)','Mass (Wine) (kg)','Mass (Oil) (kg)',
-                'Internal Volume (mm^3)','w (# pot)','l (# pot)','n (layers)','Load (N)',
-                'Max Tensile (MPa)','Max Compressive (MPa)','Factor of Safety']:
-        if col in s.columns:
-            s[col] = pd.to_numeric(s[col],errors='coerce')
-        if col in h.columns:
-            h[col] = pd.to_numeric(h[col],errors='coerce')
+# tidy & compute
+stack_df["Total Pots"] = stack_df.eval("w (# pot) * l (# pot) * n (layers)")
+for m in ["Empty","Wine","Oil"]:
+    stack_df[f"Total Mass ({m})"] = stack_df[f"Mass ({m}) (kg)"] * stack_df["Total Pots"]
+stack_df["Load (N)"] = clean(stack_df["Load (N)"])
+stack_df["Max Tensile (MPa)"] = clean(stack_df["Max Tensile (MPa)"])
+stack_df["Max Compressive (MPa)"] = clean(stack_df["Max Compressive (MPa)"])
+stack_df["Factor of Safety"] = stack_df["Load (N)"] / (stack_df["Total Mass (Empty)"] + 1e-9)
 
-    # compute totals for stacking
-    s['Total Pots']          = s['w (# pot)'] * s['l (# pot)'] * s['n (layers)']
-    s['Total Mass (Empty)']  = s['Mass (Empty) (kg)'] * s['Total Pots']
-    s['Total Mass (Wine)']   = s['Mass (Wine) (kg)']  * s['Total Pots']
-    s['Total Mass (Oil)']    = s['Mass (Oil) (kg)']   * s['Total Pots']
-    s['Total Volume']        = s['Internal Volume (mm^3)'] * s['Total Pots']
-
-    # unify into one DataFrame
-    s['Test'] = 'Stack'
-    df = pd.concat([s, h], ignore_index=True, sort=False)
-    df['Amphorae'] = df['Amphorae'].str.strip()
-    return df
-
-_all_data = load_and_prepare()
-
-
-# --- 2) Populate the amphorae checklist on the page ---
-def init_amphorae_list():
-    amps = sorted(_all_data['Amphorae'].dropna().unique())
-    container = document.getElementById('amphorae-container')
+# expose amphorae list
+unique_amps = sorted(stack_df["Amphorae"].unique().tolist())
+def populate_amphorae(amps):
+    container = window.document.getElementById("amphoraeList")
     for a in amps:
-        chk = document.createElement('input')
-        chk.type = 'checkbox'
-        chk.name = 'amphorae'
-        chk.value = a
-        chk.checked = True
-        lbl = document.createElement('label')
-        lbl.style.display = 'block'
-        lbl_text = document.createTextNode(' ' + a)
-        lbl.appendChild(chk)
-        lbl.appendChild(lbl_text)
-        container.appendChild(lbl)
+        cb = window.document.createElement("input")
+        cb.type = "checkbox"; cb.value = a; cb.checked = (a.startswith("Dressel"))
+        cb.onchange = create_proxy(lambda e: window.update_plot_proxy())
+        lbl = window.document.createElement("label")
+        lbl.textContent = a
+        container.append(cb, lbl, window.document.createElement("br"))
 
-# run once at startup
-init_amphorae_list()
+# the main draw:
+def update_plot(x, y, mass, test, amps):
+    df = stack_df[stack_df["Test"] == test].query("Amphorae in @amps")
+    fig = px.scatter(df, x=x, y=y, text="Amphorae",
+                     title=f"{y} vs {x} [{test} – {mass}]")
+    fig.update_traces(textposition="top center")
+    fig.update_layout(height=600, margin=dict(l=20,r=20,t=40,b=20))
+    window.plot.innerHTML = ""             # clear
+    window.plot.append(fig.to_html(include_plotlyjs='cdn'))
 
+# create proxies & attach
+window.update_plot_proxy = create_proxy(update_plot)
+window.update_plot = window.update_plot_proxy
+window.populate_amphorae = create_proxy(lambda : populate_amphorae(unique_amps))
 
-# --- 3) Called from script.js on any control change ---
-def update_plot(x_axis, y_axis, mass_type, test_type, amphorae_list):
-    df = _all_data.query("Test == @test_type and Amphorae in @amphorae_list")
-
-    # pick the correct mass column if needed
-    if x_axis.startswith("Total Mass"):
-        x = df[f"Total Mass ({mass_type})"]
-    else:
-        x = df[x_axis]
-
-    if y_axis.startswith("Total Mass"):
-        y = df[f"Total Mass ({mass_type})"]
-    else:
-        y = df[y_axis]
-
-    fig = px.scatter(
-        df, x=x, y=y,
-        hover_name='Amphorae',
-        title=f"{test_type} — {x_axis} vs {y_axis}"
-    )
-
-    out = document.getElementById('pyplot')
-    out.innerHTML = ''
-    out.appendChild(
-        fig.to_html(full_html=False, include_plotlyjs='cdn', default_height=400)
-        .to_python()  # convert JS string → DOM node
-    )
+# run once on load
+window.populate_amphorae()
+# draw default: Load vs Max Tensile for Dressel_20 & Dressel_1A
+window.update_plot("Load (N)",
+                   "Max Tensile (MPa)",
+                   "Total Mass (Empty)",
+                   "Stack",
+                   ["Dressel_1A","Dressel_20"])
