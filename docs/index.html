@@ -1,60 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- PyScript needs COOP/COEP headers -->
+  <!-- COOP / COEP for PyScript -->
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
   <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
 
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Amphorae interactive dashboard</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amphorae Dashboard</title>
 
+  <!-- Bootstrap & Plotly -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
-  <!-- PyScript (version-pinned) -->
+  <!-- PyScript  -->
   <link rel="stylesheet" href="https://pyscript.net/releases/2025.3.1/core.css">
   <script type="module" src="https://pyscript.net/releases/2025.3.1/core.js"></script>
-  <py-config>packages = ["pandas","plotly"]</py-config>
+  <py-config>
+    packages = ["pandas","plotly"]
+  </py-config>
 
   <style>
-    body {background:#fbfbfb;}
-    #sidebar {max-height:80vh; overflow:auto;}
-    .amp-item {font-size:.9rem;}
+    #controlPane{max-height:80vh;overflow:auto}
+    #plot{height:80vh}
   </style>
 </head>
 
 <body class="container-fluid p-4">
-  <h1 class="mb-4">🏺 Amphorae test explorer</h1>
+  <h1 class="mb-3">🏺 Amphorae interactive explorer</h1>
 
   <div class="row">
-    <!-- Plot area -->
-    <div class="col-lg-8 mb-4">
-      <div id="plot" style="height:70vh;"></div>
+    <!-- main plot -->
+    <div class="col-lg-9">
+      <div id="plot" class="border rounded"></div>
     </div>
 
-    <!-- Sidebar controls -->
-    <div class="col-lg-4">
-      <div class="card" id="sidebar">
-        <div class="card-body">
-          <h5 class="card-title">Controls</h5>
+    <!-- side controls -->
+    <div class="col-lg-3">
+      <div id="controlPane" class="border rounded p-3">
+        <h5 class="mb-2">Axes</h5>
+        <label class="form-label">X&nbsp;axis:</label>
+        <select id="xSelect" class="form-select mb-3"></select>
+        <label class="form-label">Y&nbsp;axis:</label>
+        <select id="ySelect" class="form-select mb-3"></select>
 
-          <div class="mb-3">
-            <label class="form-label">X&nbsp;axis</label>
-            <select id="xSelect" class="form-select form-select-sm"></select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Y&nbsp;axis</label>
-            <select id="ySelect" class="form-select form-select-sm"></select>
-          </div>
-
-          <h6 class="mt-4">Amphorae to plot</h6>
-          <div id="ampList" class="form-check"></div>
-        </div>
+        <h5 class="mt-4 mb-2">Amphorae</h5>
+        <div id="ampList" class="form-check"></div>
       </div>
     </div>
   </div>
 
-  <py-script src="interactive.py"></py-script>
+  <py-script src="main.py"></py-script>
 </body>
 </html>
