@@ -1,71 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
-  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Amphorae interactive explorer</title>
+  <meta charset="UTF-8" />
+  <title>Amphorae Interactive Explorer</title>
 
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- PyScript core -->
+  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
 
-  <link rel="stylesheet" href="https://pyscript.net/releases/2025.3.1/core.css">
-  <script type="module" src="https://pyscript.net/releases/2025.3.1/core.js"></script>
-  <py-config>packages = ["pandas","plotly"]</py-config>
+  <!-- Plotly (bundled in PyScript) -->
+  <py-env>
+    - pandas
+    - plotly
+  </py-env>
 
   <style>
-    #controlPane{max-height:80vh;overflow:auto}
-    #plot{height:80vh}
+    /* basic layout */
+    #controls { float: right; width: 25%; }
+    #plot     { margin-right: 27%; min-height: 60vh; }
   </style>
 </head>
+<body>
 
-<body class="container-fluid p-4">
-  <h1 class="mb-4">🏺 Amphorae interactive explorer</h1>
+  <h1>🏺 Amphorae interactive explorer</h1>
 
-  <div class="row">
-    <!-- Plot -->
-    <div class="col-lg-9">
-      <div id="plot" class="border rounded"></div>
-    </div>
+  <div id="plot"></div>
 
-    <!-- Controls -->
-    <div class="col-lg-3">
-      <div id="controlPane" class="border rounded p-3">
-        <h5>Axes</h5>
-        <label class="form-label">X&nbsp;axis:</label>
-        <select id="xSelect" class="form-select mb-3">
-          <option value="Load (N)">Load (N)</option>
-          <option value="Total Mass">Total&nbsp;Mass</option>
-          <option value="Total Internal Volume">Total&nbsp;Internal&nbsp;Volume</option>
-        </select>
+  <div id="controls">
+    <label>X axis:
+      <select id="xSelect">
+        <option>Load (N)</option>
+        <option>Total Mass</option>
+        <option>Total Internal Volume</option>
+      </select>
+    </label>
 
-        <label class="form-label">Y&nbsp;axis:</label>
-        <select id="ySelect" class="form-select mb-3">
-          <option value="Max Tensile (MPa)">Max&nbsp;Tensile&nbsp;(MPa)</option>
-          <option value="Max Compressive (MPa)">Max&nbsp;Compressive&nbsp;(MPa)</option>
-          <option value="Factor of Safety">Factor&nbsp;of&nbsp;Safety</option>
-        </select>
+    <label>Y axis:
+      <select id="ySelect">
+        <option>Max Tensile (MPa)</option>
+        <option>Max Compressive (MPa)</option>
+        <option>Factor of Safety</option>
+      </select>
+    </label>
 
-        <div id="massToggle" class="mb-4">
-          <label class="form-label fw-bold">Mass type:</label>
-          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Empty" checked> Empty</div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Wine"> Wine</div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Oil"> Oil</div>
-        </div>
+    <fieldset>
+      <legend>Mass type:</legend>
+      <label><input type="radio" name="massRad" value="Empty" checked> Empty</label><br/>
+      <label><input type="radio" name="massRad" value="Wine"> Wine</label><br/>
+      <label><input type="radio" name="massRad" value="Oil" checked> Oil</label>
+    </fieldset>
 
-        <div id="testToggle" class="mb-4">
-          <label class="form-label fw-bold">Test type:</label>
-          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Stack" checked> Stack</div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Hold"> Hold</div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Drop"> Drop</div>
-        </div>
+    <fieldset>
+      <legend>Test type:</legend>
+      <label><input type="radio" name="testRad" value="Stack" checked> Stack</label><br/>
+      <label><input type="radio" name="testRad" value="Hold"> Hold</label><br/>
+      <label><input type="radio" name="testRad" value="Drop"> Drop</label>
+    </fieldset>
 
-        <h5>Amphorae</h5>
-        <div id="ampList" class="form-check"></div>
-      </div>
-    </div>
+    <div id="ampList"></div>
   </div>
 
+  <!-- This tag will pull in your `docs/main.py` and run `main()` -->
   <py-script src="main.py"></py-script>
+
 </body>
 </html>
