@@ -69,9 +69,9 @@ async def populate_amp_list(df, test_choice):
     box = await wait_for("ampList")
     box.innerHTML = ""
     if test_choice == "Stack":
-        mask = df["Category"].str.contains("Stack")
+        mask = df["Category"].fillna("").str.contains("Stack")
     else:
-        mask = df["Category"] == test_choice
+        mask = df["Category"].fillna("") == test_choice
     amps = sorted(df[mask]["Amphora"].unique(), key=str.casefold)
     for a in amps:
         box.innerHTML += (
