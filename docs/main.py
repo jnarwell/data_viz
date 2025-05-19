@@ -22,27 +22,32 @@ async def wait_for(elem_id: str):
         await asyncio.sleep(0.01)
     return document.getElementById(elem_id)
 
+# ── helper inside main.py ─────────────────────────────────────────────────────
 def compute_totals(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    cols = ["w (# pot)", "l (# pot)", "n (layers)",
-            "Internal Volume (mm^3)",
-            "Mass (Empty) (kg)", "Mass (Wine) (kg)", "Mass (Oil) (kg)"]
+    # locate column names by keywords
+    vol_col  = next(c for c in df.columns if "internal volume" in c.lower())
+    empty_col = next(c for c in df.columns if "mass" in c.lower() and "empty" in c.lower())
+    wine_col  = next(c for c in df.columns if "mass" in c.lower() and "wine"  in c.lower())
+    oil_col   = next(c for c in df.columns if "mass" in c.lower() and "oil"   in c.lower())
 
-    # 1️⃣  force to float; bad data -> NaN
-    for c in cols:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # ensure numeric
+    cast_cols = ["w (# pot)", "l (# pot)", "n (layers)",
+                 vol_col, empty_col, wine_col, oil_col]
+    df[cast_cols] = df[cast_cols].apply(lambda s: pd.to_numeric(s, errors="coerce"))
 
-    # 2️⃣  any NaN in the pot-count columns should become 0 (means “no pots”)
+    # NaN in pot-counts → 0  (means “no pots”)
     df[["w (# pot)", "l (# pot)", "n (layers)"]] = \
         df[["w (# pot)", "l (# pot)", "n (layers)"]].fillna(0)
 
     count = df["w (# pot)"] * df["l (# pot)"] * df["n (layers)"]
-    df["Total Internal Volume"] = df["Internal Volume (mm^3)"] * count
-    df["Total Mass Empty"]      = df["Mass (Empty) (kg)"]      * count
-    df["Total Mass Wine"]       = df["Mass (Wine) (kg)"]       * count
-    df["Total Mass Oil"]        = df["Mass (Oil) (kg)"]        * count
+    df["Total Internal Volume"] = df[vol_col]   .fillna(0) * count
+    df["Total Mass Empty"]      = df[empty_col] .fillna(0) * count
+    df["Total Mass Wine"]       = df[wine_col]  .fillna(0) * count
+    df["Total Mass Oil"]        = df[oil_col]   .fillna(0) * count
     return df
+
 
 
 
