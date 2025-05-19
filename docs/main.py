@@ -1,9 +1,10 @@
 import pandas as pd, io, asyncio, re
 from pyodide.http import pyfetch
 from js import document
+import pyodide                         # <-- added back
 from pyodide.ffi import create_proxy
 import plotly.express as px
-from pyscript import display          # ← here
+from pyscript import display
 
 
 pyodide.create_proxy = create_proxy           # any old call now resolves
