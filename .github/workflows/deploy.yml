@@ -1,17 +1,38 @@
 name: deploy
+
 on:
   push:
     branches: [main]
+
+# optional but keeps parallel pushes from colliding
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 permissions:
-  pages: write
-  id-token: write
+  contents: read        # to clone the repo
+  pages: write          # to deploy to Pages
+  id-token: write       # to authenticate to Pages
+
 jobs:
   deploy:
+    # 👇 THIS is what the error complained about
+    environment:
+      name: github-pages
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      # Sets GH_PAGES_* environment vars
       - uses: actions/configure-pages@v4
+        id: pages
+
+      # Upload static site from /docs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs
+
+      # Publish it
       - uses: actions/deploy-pages@v4
+        id: deploy
