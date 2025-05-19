@@ -87,9 +87,14 @@ async def main():
 
     try:
         stack_df, hd_df = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
+        
+        # ── DEBUG: show one raw value from each sheet in the browser console
+        print("Sample Stack row Arrangement →", stack_df.iloc[0]["Arrangement"])
+        print("Sample Hold/Drop row Test   →", hd_df.iloc[0]["Test"])
         matrix = build_matrix(stack_df, hd_df)
         render(matrix)
     except Exception as e:
         tbl.outerHTML = f"<p class='text-danger'>Error: {e}</p>"
 
 asyncio.ensure_future(main())
+
