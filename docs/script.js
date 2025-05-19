@@ -1,5 +1,6 @@
 async function main() {
   let pyodide = await loadPyodide();
+  await micropip.install("micropip")
   await pyodide.loadPackage("micropip");
   await pyodide.runPythonAsync(`
 import micropip
