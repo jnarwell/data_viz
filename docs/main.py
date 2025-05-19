@@ -1,164 +1,122 @@
-import pandas as pd, io, asyncio, re
-from pyodide.http import pyfetch
+import asyncio
+import pandas as pd
+import plotly.express as px
 from js import document
 from pyodide.ffi import create_proxy
-import plotly.express as px
-from pyscript import display
 
-"""-------------------------------------------------------------
-Amphorae Interactive Explorer – single‑page PyScript app
--------------------------------------------------------
-• X‑axis choices: Load (N) | Total Mass | Total Internal Volume
-• Y‑axis choices: Max Tensile | Max Compressive | Factor of Safety
-• Mass type toggle: Empty | Wine | Oil (applies when X == Total Mass)
-• Test‑type toggle: Stack | Hold | Drop — filters both data set & list
-• Amphorae checklist updates dynamically per selected test type
-  and controls what traces are shown.
+# --- publish‐to‐web CSV URLs ---
+STACK_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv&gid=145083070"
+HD_CSV    = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv&gid=0"
 
-No matplotlib!  Everything is rendered with Plotly Express, so the
-page works out‑of‑the‑box without installing extra wheels in Pyodide.
-"""
+# load & preprocess
+def load_data():
+    stack = pd.read_csv(STACK_CSV)
+    hd    = pd.read_csv(HD_CSV)
+    # ensure the Test column is trimmed
+    for df in (stack, hd):
+        df["Test"] = df["Test"].astype(str).str.strip()
+    return stack, hd
 
-# ────────────────────────────── CSV feeds ────────────────────────────────────
-STACK_CSV = (
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
-    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv"
-)
-HOLD_DROP_CSV = (
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
-    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?gid=145083070&single=true&output=csv"
-)
-CSV_FEEDS = [STACK_CSV, HOLD_DROP_CSV]
-SUFFIX_RE = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
-
-# ───────────────────────────── helper fns ────────────────────────────────────
-async def fetch_csv(url: str) -> pd.DataFrame:
-    txt = await (await pyfetch(url)).text()
-    return pd.read_csv(io.StringIO(txt))
-
-async def wait_for(elem_id: str):
-    while document.getElementById(elem_id) is None:
-        await asyncio.sleep(0.01)
-    return document.getElementById(elem_id)
-
-# numeric coercion & total‑column builder
-
-def compute_totals(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    # ensure pot‑count columns exist
-    for col in ["w (# pot)", "l (# pot)", "n (layers)"]:
-        if col not in df.columns:
-            df[col] = 1
-
-    # locate per‑pot mass / volume columns by keyword
-    vol_col   = next(c for c in df.columns if "internal volume" in c.lower())
-    empty_col = next(c for c in df.columns if "mass" in c.lower() and "empty" in c.lower())
-    wine_col  = next(c for c in df.columns if "mass" in c.lower() and "wine"  in c.lower())
-    oil_col   = next(c for c in df.columns if "mass" in c.lower() and "oil"   in c.lower())
-
-    num_cols = ["w (# pot)", "l (# pot)", "n (layers)", vol_col, empty_col, wine_col, oil_col]
-    df[num_cols] = df[num_cols].apply(lambda s: pd.to_numeric(s, errors="coerce"))
-
-    # counts → 1 if NaN   |   per‑pot metrics → 0 if NaN
-    df[["w (# pot)", "l (# pot)", "n (layers)"]] = df[["w (# pot)", "l (# pot)", "n (layers)"]].fillna(1)
-    df[[vol_col, empty_col, wine_col, oil_col]] = df[[vol_col, empty_col, wine_col, oil_col]].fillna(0)
-
-    count = df["w (# pot)"] * df["l (# pot)"] * df["n (layers)"]
-    df["Total Internal Volume"] = df[vol_col]   * count
-    df["Total Mass Empty"]      = df[empty_col] * count
-    df["Total Mass Wine"]       = df[wine_col]  * count
-    df["Total Mass Oil"]        = df[oil_col]   * count
+# compute totals on the "stack" sheet
+def compute_totals(df):
+    # coerce numeric columns
+    for c in ["Mass (Empty) (kg)", "Mass (Wine) (kg)", "Mass (Oil) (kg)",
+              "Internal Volume (mm^3)", "w (# pot)", "l (# pot)", "n (layers)", "Load (N)"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    # totals
+    df["Total Pots"]       = df["w (# pot)"] * df["l (# pot)"] * df["n (layers)"]
+    df["Total Mass Empty"] = df["Mass (Empty) (kg)"] * df["Total Pots"]
+    df["Total Mass Wine"]  = df["Mass (Wine) (kg)"]  * df["Total Pots"]
+    df["Total Mass Oil"]   = df["Mass (Oil) (kg)"]   * df["Total Pots"]
+    df["Total Volume"]     = df["Internal Volume (mm^3)"] * df["Total Pots"]
     return df
 
-# tidy: unify category + amphora name, then compute totals
+# read both sheets once
+STACK_DF, HD_DF = load_data()
+STACK_DF = compute_totals(STACK_DF)
 
-def tidy(stack_df: pd.DataFrame, hd_df: pd.DataFrame) -> pd.DataFrame:
-    stack_df["Category"] = stack_df["Test"].str.contains("hex", case=False).map({True: "Stack Hex", False: "Stack Rect"})
-    hd_df["Category"] = hd_df["Test"].str.contains(r"^drop", case=False, regex=True).map({True: "Drop", False: "Hold"})
+# DOM refs
+plot_div   = document.getElementById("plot")
+amp_list   = document.getElementById("ampList")
+x_select   = document.getElementById("xSelect")
+y_select   = document.getElementById("ySelect")
 
-    df = pd.concat([stack_df, hd_df], ignore_index=True)
-    df["Amphora"] = df["Amphorae"].astype(str).str.strip().str.replace(SUFFIX_RE, "", regex=True)
-    return compute_totals(df)
-
-# ─────────────────────────── UI helpers ──────────────────────────────────────
-async def refresh_amphora_list(df: pd.DataFrame, test_choice: str):
-    box = await wait_for("ampList")
-    box.innerHTML = ""
-    if test_choice == "Stack":
-        mask = df["Category"].fillna("").str.contains("Stack")
-    else:
-        mask = df["Category"].fillna("") == test_choice
-    amps = sorted(df[mask]["Amphora"].unique(), key=str.casefold)
-
-    for a in amps:
-        box.innerHTML += (
-            f'<div class="form-check"><input class="form-check-input" type="checkbox" value="{a}" id="chk_{a}" checked>'
-            f'<label class="form-check-label" for="chk_{a}">{a}</label></div>'
-        )
-
-# selection helpers
-
+# helper to read current selections
 def current_selection():
-    amps = [e.value for e in document.querySelectorAll("#ampList input:checked")]
-    x_raw = document.getElementById("xSelect").value
-    y_field = document.getElementById("ySelect").value
     mass_type = document.querySelector("input[name='massRad']:checked").value
-    test_choice = document.querySelector("input[name='testRad']:checked").value
-    return amps, x_raw, y_field, mass_type, test_choice
+    test_type = document.querySelector("input[name='testRad']:checked").value
+    x_axis    = x_select.value
+    y_axis    = y_select.value
+    # gather checked amphorae
+    amps = []
+    for cb in amp_list.querySelectorAll("input[type=checkbox]"):
+        if cb.checked:
+            amps.append(cb.value)
+    return mass_type, test_type, x_axis, y_axis, amps
 
-def subset_by_test(df: pd.DataFrame, test_choice: str):
-    if test_choice == "Stack":
-        return df[df["Category"].fillna("").str.contains("Stack")]
-    return df[df["Category"].fillna("") == test_choice]
+# repopulate the amphorae checkbox list
+async def refresh_amphora_list(*_):
+    mass_type, test_type, *_ = current_selection()
+    # pick the correct df & column
+    df = STACK_DF if test_type == "Stack" else HD_DF
+    # filter on Test == test_type AND at least some Max Tensile/Compress column non‐null
+    colname = "Max Tensile (MPa)" if test_type != "Drop" else "Max Tensile (MPa)"
+    # allow whichever max column is present
+    valid = df[df["Test"] == test_type]
+    valid = valid[~valid[colname].isna()]
+    unique = sorted(valid["Amphorae"].unique())
+    # rebuild
+    amp_list.innerHTML = ""
+    for amp in unique:
+        box = document.createElement("label")
+        box.innerHTML = f"<input type='checkbox' value='{amp}' checked> {amp}<br/>"
+        amp_list.appendChild(box)
 
-# resolve x‑axis column name
+# draw the Plotly scatter
+def draw(*_):
+    mass_type, test_type, x_axis, y_axis, amps = current_selection()
+    # pick df & column‐mapping
+    if test_type == "Stack":
+        df = STACK_DF.copy()
+        colmap = {
+            "Load (N)":     "Load (N)",
+            "Total Mass":   f"Total Mass {mass_type}",
+            "Total Internal Volume": "Total Volume"
+        }
+    else:
+        df = HD_DF.copy()
+        colmap = {
+            "Load (N)":     "Max Load (N)",              # assuming HD sheet has this
+            "Total Mass":   f"Mass ({mass_type}) (kg)",   # per‐pot
+            "Total Internal Volume": "Internal Volume (mm^3)"
+        }
 
-def x_column(field: str, mass_type: str):
-    return f"Total Mass {mass_type}" if field == "Total Mass" else field
+    # filter
+    df = df[df["Test"] == test_type]
+    df = df[df["Amphorae"].isin(amps)]
+    # map axes
+    xcol = colmap[x_axis]
+    ycol = colmap[y_axis]
+    # Plotly
+    fig = px.scatter(
+        df, x=xcol, y=ycol, text="Amphorae",
+        title=f"{test_type}: {y_axis} vs {x_axis}",
+        height=600
+    )
+    fig.update_traces(textposition="top center")
+    plot_div.innerHTML = ""
+    plot_div.appendChild(fig.to_html(full_html=False))
 
-# draw plot
+# bridge handlers into JS events
+cb_draw = create_proxy(lambda e: draw())
+cb_list = create_proxy(lambda e: asyncio.ensure_future(refresh_amphora_list()) or draw())
 
-def draw(df: pd.DataFrame, *_):
-    amps, x_raw, y_field, mass_type, test_choice = current_selection()
-    div = document.getElementById("plot")
+# wire them up
+x_select.addEventListener("change", cb_draw)
+y_select.addEventListener("change", cb_draw)
+for r in document.querySelectorAll("input[name='massRad'], input[name='testRad']"):
+    r.addEventListener("change", cb_list)
 
-    if not amps or x_raw == y_field:
-        div.innerHTML = "<p class='text-muted'>Select amphorae and distinct axes.</p>"
-        return
-
-    df_test = subset_by_test(df, test_choice)
-    x_field = x_column(x_raw, mass_type)
-
-    sub = df_test[df_test["Amphora"].isin(amps)]
-    if sub.empty or x_field not in sub.columns or y_field not in sub.columns:
-        div.innerHTML = "<p>No data for selection.</p>"
-        return
-
-    fig = px.scatter(sub, x=x_field, y=y_field, color="Amphora", symbol="Category",
-                     title=f"{y_field} vs {x_field} – {test_choice}")
-    display(fig, target="plot", append=False)
-
-# ─────────────────────────────── main ────────────────────────────────────────
-async def main():
-    # load data concurrently
-    stack_df, hd_df = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
-    df = tidy(stack_df, hd_df)
-
-    # initial UI population
-    await refresh_amphora_list(df, "Stack")
-    draw(df)
-
-    cb_draw = create_proxy(lambda evt: draw(df))
-    cb_test = create_proxy(lambda evt: asyncio.ensure_future(refresh_amphora_list(df, current_selection()[4])) or draw(df))
-
-    # connect listeners
-    for sel_id in ("xSelect", "ySelect"):
-        document.getElementById(sel_id).addEventListener("change", cb_draw)
-    for radio in document.querySelectorAll("input[name='massRad']"):
-        radio.addEventListener("change", cb_draw)
-    for radio in document.querySelectorAll("input[name='testRad']"):
-        radio.addEventListener("change", cb_test)
-
-# kick off
-asyncio.ensure_future(main())
+# initial
+asyncio.ensure_future(refresh_amphora_list())
+asyncio.ensure_future(draw())
