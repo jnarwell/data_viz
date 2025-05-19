@@ -1,5 +1,14 @@
-import pandas as pd
-import matplotlib.pyplot as plt
+import asyncio
+import micropip
+
+async def main():
+    await micropip.install("matplotlib")
+    import matplotlib.pyplot as plt
+    print("Matplotlib successfully installed and imported!")
+
+# Kick off the async code
+asyncio.run(main())
+
 
 # Load CSVs
 stack_df = pd.read_csv("amphorae_comp - stack.csv")
