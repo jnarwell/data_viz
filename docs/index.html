@@ -48,21 +48,19 @@
 
         <div id="massToggle" class="mb-4">
           <label class="form-label fw-bold">Mass type:</label>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="massRad" id="massEmpty" value="Empty" checked>
-            <label class="form-check-label" for="massEmpty">Empty</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="massRad" id="massWine" value="Wine">
-            <label class="form-check-label" for="massWine">Wine</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="massRad" id="massOil" value="Oil">
-            <label class="form-check-label" for="massOil">Oil</label>
-          </div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Empty" checked> Empty</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Wine"> Wine</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="massRad" value="Oil"> Oil</div>
         </div>
 
-        <h5 class="mt-3">Amphorae</h5>
+        <div id="testToggle" class="mb-4">
+          <label class="form-label fw-bold">Test type:</label>
+          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Stack" checked> Stack</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Hold"> Hold</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="testRad" value="Drop"> Drop</div>
+        </div>
+
+        <h5>Amphorae</h5>
         <div id="ampList" class="form-check"></div>
       </div>
     </div>
