@@ -25,13 +25,17 @@ async def wait_for(elem_id: str):
 def compute_totals(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    num_cols = ["w (# pot)", "l (# pot)", "n (layers)",
-                "Internal Volume (mm^3)",
-                "Mass (Empty) (kg)", "Mass (Wine) (kg)", "Mass (Oil) (kg)"]
+    cols = ["w (# pot)", "l (# pot)", "n (layers)",
+            "Internal Volume (mm^3)",
+            "Mass (Empty) (kg)", "Mass (Wine) (kg)", "Mass (Oil) (kg)"]
 
-    df[num_cols] = df[num_cols].apply(
-        lambda col: pd.to_numeric(col, errors="coerce")
-    )
+    # 1️⃣  force to float; bad data -> NaN
+    for c in cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # 2️⃣  any NaN in the pot-count columns should become 0 (means “no pots”)
+    df[["w (# pot)", "l (# pot)", "n (layers)"]] = \
+        df[["w (# pot)", "l (# pot)", "n (layers)"]].fillna(0)
 
     count = df["w (# pot)"] * df["l (# pot)"] * df["n (layers)"]
     df["Total Internal Volume"] = df["Internal Volume (mm^3)"] * count
@@ -39,6 +43,7 @@ def compute_totals(df: pd.DataFrame) -> pd.DataFrame:
     df["Total Mass Wine"]       = df["Mass (Wine) (kg)"]       * count
     df["Total Mass Oil"]        = df["Mass (Oil) (kg)"]        * count
     return df
+
 
 
 def tidy_data(stack_df, hd_df):
