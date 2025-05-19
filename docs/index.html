@@ -8,26 +8,58 @@
   <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
   <script defer src="https://pyscript.net/latest/pyscript.js"></script>
 
-  <!-- Plotly (bundled in PyScript) -->
+  <!-- Tell PyScript which packages we need -->
   <py-env>
     - pandas
     - plotly
   </py-env>
 
   <style>
-    /* basic layout */
-    #controls { float: right; width: 25%; }
-    #plot     { margin-right: 27%; min-height: 60vh; }
+    body {
+      font-family: sans-serif;
+      margin: 1rem;
+    }
+    h1 {
+      margin-bottom: 1rem;
+    }
+    #plot {
+      float: left;
+      width: 70%;
+      min-height: 60vh;
+    }
+    #controls {
+      float: right;
+      width: 28%;
+    }
+    #controls select,
+    #controls fieldset {
+      margin-bottom: 1rem;
+      width: 100%;
+    }
+    #controls fieldset legend {
+      font-weight: bold;
+    }
+    #ampList {
+      max-height: 40vh;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+    }
   </style>
 </head>
+
 <body>
+  <h1>🏺 Amphorae Interactive Explorer</h1>
 
-  <h1>🏺 Amphorae interactive explorer</h1>
+  <!-- Plot area -->
+  <div id="plot">
+    <!-- Python will inject the Plotly figure here -->
+  </div>
 
-  <div id="plot"></div>
-
+  <!-- Control panel -->
   <div id="controls">
-    <label>X axis:
+    <label>
+      <strong>X axis:</strong><br/>
       <select id="xSelect">
         <option>Load (N)</option>
         <option>Total Mass</option>
@@ -35,7 +67,8 @@
       </select>
     </label>
 
-    <label>Y axis:
+    <label>
+      <strong>Y axis:</strong><br/>
       <select id="ySelect">
         <option>Max Tensile (MPa)</option>
         <option>Max Compressive (MPa)</option>
@@ -44,24 +77,28 @@
     </label>
 
     <fieldset>
-      <legend>Mass type:</legend>
+      <legend>Mass type</legend>
       <label><input type="radio" name="massRad" value="Empty" checked> Empty</label><br/>
       <label><input type="radio" name="massRad" value="Wine"> Wine</label><br/>
-      <label><input type="radio" name="massRad" value="Oil" checked> Oil</label>
+      <label><input type="radio" name="massRad" value="Oil"> Oil</label>
     </fieldset>
 
     <fieldset>
-      <legend>Test type:</legend>
+      <legend>Test type</legend>
       <label><input type="radio" name="testRad" value="Stack" checked> Stack</label><br/>
       <label><input type="radio" name="testRad" value="Hold"> Hold</label><br/>
       <label><input type="radio" name="testRad" value="Drop"> Drop</label>
     </fieldset>
 
-    <div id="ampList"></div>
+    <div>
+      <strong>Amphorae</strong>
+      <div id="ampList">
+        <!-- Python will populate checkboxes here -->
+      </div>
+    </div>
   </div>
 
-  <!-- This tag will pull in your `docs/main.py` and run `main()` -->
+  <!-- This will load and run your main.py -->
   <py-script src="main.py"></py-script>
-
 </body>
 </html>
