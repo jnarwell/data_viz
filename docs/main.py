@@ -23,14 +23,23 @@ async def wait_for(elem_id: str):
     return document.getElementById(elem_id)
 
 def compute_totals(df: pd.DataFrame) -> pd.DataFrame:
-    """Add Total Mass/Volume columns based on pot counts."""
     df = df.copy()
+
+    num_cols = ["w (# pot)", "l (# pot)", "n (layers)",
+                "Internal Volume (mm^3)",
+                "Mass (Empty) (kg)", "Mass (Wine) (kg)", "Mass (Oil) (kg)"]
+
+    df[num_cols] = df[num_cols].apply(
+        lambda col: pd.to_numeric(col, errors="coerce")
+    )
+
     count = df["w (# pot)"] * df["l (# pot)"] * df["n (layers)"]
     df["Total Internal Volume"] = df["Internal Volume (mm^3)"] * count
     df["Total Mass Empty"]      = df["Mass (Empty) (kg)"]      * count
     df["Total Mass Wine"]       = df["Mass (Wine) (kg)"]       * count
     df["Total Mass Oil"]        = df["Mass (Oil) (kg)"]        * count
     return df
+
 
 def tidy_data(stack_df, hd_df):
     stack_df["Category"] = stack_df["Test"].str.contains("hex", case=False)\
