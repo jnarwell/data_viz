@@ -1,53 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Amphorae Interactive Explorer</title>
 
-  <!-- PyScript core -->
-  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
-  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+  <!-- Bootstrap (optional) -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.4.1/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-…"
+    crossorigin="anonymous"
+  />
 
+  <!-- Your own styles (style.css lives alongside index.html) -->
   <link rel="stylesheet" href="style.css" />
 
-  <!-- Tell PyScript which packages we need -->
-  <py-env>
-    - pandas
-    - plotly
-  </py-env>
-
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 1rem;
-    }
-    h1 {
-      margin-bottom: 1rem;
-    }
-    #plot {
-      float: left;
-      width: 70%;
-      min-height: 60vh;
-    }
-    #controls {
-      float: right;
-      width: 28%;
-    }
-    #controls select,
-    #controls fieldset {
-      margin-bottom: 1rem;
-      width: 100%;
-    }
-    #controls fieldset legend {
-      font-weight: bold;
-    }
-    #ampList {
-      max-height: 40vh;
-      overflow-y: auto;
-      border: 1px solid #ccc;
-      padding: 0.5rem;
-    }
-  </style>
+  <py-script src="main.py"></py-script>
 </head>
 
 <body>
