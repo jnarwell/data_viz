@@ -4,13 +4,16 @@ from js import document
 
 # ------------------------------------------------------------------
 CSV_URLS = [
-    # Stack / summary tab
-    "https://docs.google.com/spreadsheets/d/e/"
-    "2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-"
-    "JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv",
-    # ➕ If you publish the second sheet as CSV, drop its URL here too
-]
-SUFFIX_PATTERN = re.compile(r"_(rect|hex|hold.*|drop.*|oil|wine|empty)$", re.I)
+    # ▶ Hold / Drop tab  (gid = 145083070)
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?"
+    "gid=145083070&single=true&output=csv",
+
+    # ▶ Stack tab  (gid = 0)  ← the link you just shared
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ92JwmYi97ikmGypcynINdCa0m4WMSwycoihoOkv-JXiWlHhwiOwfhyhFeGg_B4n3nqwScrMYUQCXp/pub?output=csv",
+] # "https://docs.google.com/spreadsheets/d/e/.../pub?gid=0&single=true&output=csv",
+# Anything that’s purely a test-type, not a pot name
+DROP_WORDS = re.compile(r"^(drop|hold(_.*)?|test|sample)$", re.I)
+SUFFIXES   = re.compile(r"_(rect|hex|oil|wine|empty|hold.*|drop.*)$", re.I)
 # ------------------------------------------------------------------
 
 
@@ -20,21 +23,26 @@ async def fetch_csv(url: str) -> pd.DataFrame:
     return pd.read_csv(io.StringIO(text))
 
 
-def extract_clean_names(df: pd.DataFrame) -> list[str]:
-    # find column called 'Amphorae' (case-insensitive)
-    name_col = next((c for c in df.columns if c.lower() == "amphorae"), None)
-    if not name_col:
-        return []
+def find_amphora_column(df: pd.DataFrame) -> str | None:
+    for c in df.columns:
+        cl = c.lower()
+        if cl.startswith("amphora"):
+            return c
+    return None
 
-    names = (
-        df[name_col]
+
+def collect_names(df: pd.DataFrame) -> list[str]:
+    col = find_amphora_column(df)
+    if not col:
+        return []
+    return (
+        df[col]
         .dropna()
         .astype(str)
         .str.strip()
-        .str.replace(SUFFIX_PATTERN, "", regex=True)  # strip suffixes
-        .unique()
+        .str.replace(SUFFIXES, "", regex=True)
+        .tolist()
     )
-    return sorted(names, key=str.casefold)
 
 
 async def main():
@@ -45,13 +53,18 @@ async def main():
         dfs   = await asyncio.gather(*(fetch_csv(u) for u in CSV_URLS))
         names = []
         for df in dfs:
-            names.extend(extract_clean_names(df))
+            names.extend(collect_names(df))
 
-        names = sorted(set(names), key=str.casefold)
+        # tidy up
+        names = {
+            n for n in names
+            if n and not DROP_WORDS.match(n)
+        }
+        names = sorted(names, key=str.casefold)
 
         ul.innerHTML = ""
         if not names:
-            ul.innerHTML = "No Amphorae column found in any CSV."
+            ul.innerHTML = "No Amphora names found—check that both tabs are published."
             return
 
         for n in names:
@@ -60,6 +73,6 @@ async def main():
             ul.appendChild(li)
 
     except Exception as e:
-        ul.innerHTML = f"Error loading CSV: {e}"
+        ul.innerHTML = f"Error: {e}"
 
 asyncio.ensure_future(main())
