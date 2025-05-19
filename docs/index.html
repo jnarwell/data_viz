@@ -1,75 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
   <title>Amphorae Interactive Explorer</title>
-
-  <!-- Bootstrap (optional) -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.4.1/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-    integrity="sha384-…"
-    crossorigin="anonymous"
-  />
-
-  <!-- Your own styles (style.css lives alongside index.html) -->
-  <link rel="stylesheet" href="style.css" />
-
-  <py-script src="main.py"></py-script>
+  <!-- PyScript -->
+  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+  <!-- Optional: a little padding -->
+  <style>
+    body { padding: 1rem; font-family: sans-serif; }
+    #controls { float: right; width: 30%; }
+    #pyplot { width: 65%; min-height: 400px; float: left; }
+    .section { border: 1px solid #ccc; padding: .5rem; margin-bottom: 1rem; }
+  </style>
 </head>
-
 <body>
+
   <h1>🏺 Amphorae Interactive Explorer</h1>
 
-  <!-- Plot area -->
-  <div id="plot">
-    <!-- Python will inject the Plotly figure here -->
-  </div>
+  <!-- Where Plotly will draw -->
+  <div id="pyplot"></div>
 
-  <!-- Control panel -->
+  <!-- Controls -->
   <div id="controls">
-    <label>
-      <strong>X axis:</strong><br/>
-      <select id="xSelect">
+    <div class="section">
+      <label for="x-axis"><strong>X axis:</strong></label>
+      <select id="x-axis">
         <option>Load (N)</option>
-        <option>Total Mass</option>
-        <option>Total Internal Volume</option>
+        <option>Total Mass (Empty)</option>
+        <option>Total Mass (Wine)</option>
+        <option>Total Mass (Oil)</option>
+        <option>Total Volume</option>
       </select>
-    </label>
-
-    <label>
-      <strong>Y axis:</strong><br/>
-      <select id="ySelect">
+      <br/><br/>
+      <label for="y-axis"><strong>Y axis:</strong></label>
+      <select id="y-axis">
         <option>Max Tensile (MPa)</option>
         <option>Max Compressive (MPa)</option>
         <option>Factor of Safety</option>
       </select>
-    </label>
+    </div>
 
-    <fieldset>
-      <legend>Mass type</legend>
-      <label><input type="radio" name="massRad" value="Empty" checked> Empty</label><br/>
-      <label><input type="radio" name="massRad" value="Wine"> Wine</label><br/>
-      <label><input type="radio" name="massRad" value="Oil"> Oil</label>
-    </fieldset>
+    <div class="section">
+      <strong>Mass type:</strong><br/>
+      <label><input type="radio" name="mass-type" value="Empty" checked> Empty</label><br/>
+      <label><input type="radio" name="mass-type" value="Wine"> Wine</label><br/>
+      <label><input type="radio" name="mass-type" value="Oil"> Oil</label>
+    </div>
 
-    <fieldset>
-      <legend>Test type</legend>
-      <label><input type="radio" name="testRad" value="Stack" checked> Stack</label><br/>
-      <label><input type="radio" name="testRad" value="Hold"> Hold</label><br/>
-      <label><input type="radio" name="testRad" value="Drop"> Drop</label>
-    </fieldset>
+    <div class="section">
+      <strong>Test type:</strong><br/>
+      <label><input type="radio" name="test-type" value="Stack" checked> Stack</label><br/>
+      <label><input type="radio" name="test-type" value="Hold"> Hold</label><br/>
+      <label><input type="radio" name="test-type" value="Drop"> Drop</label>
+    </div>
 
-    <div>
-      <strong>Amphorae</strong>
-      <div id="ampList">
-        <!-- Python will populate checkboxes here -->
-      </div>
+    <div class="section" id="amphorae-container">
+      <strong>Amphorae:</strong><br/>
+      <!-- Filled in by Python on load -->
     </div>
   </div>
 
-  <!-- This will load and run your main.py -->
+  <!-- PyScript entrypoint -->
   <py-script src="main.py"></py-script>
+
+  <!-- Our glue logic -->
+  <script src="script.js"></script>
 </body>
 </html>
