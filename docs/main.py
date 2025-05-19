@@ -87,8 +87,8 @@ async def main():
 
     try:
         stack_df, hd_df = await asyncio.gather(*(fetch_csv(u) for u in CSV_FEEDS))
-        print("Stack columns  →", list(stack_df.columns))
-        print("Hold/Drop cols →", list(hd_df.columns))
+        print("Stack columns", list(stack_df.columns))
+        print("Hold/Drop cols", list(hd_df.columns))
 
         matrix = build_matrix(stack_df, hd_df)
         render(matrix)
