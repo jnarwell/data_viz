@@ -166,7 +166,22 @@ function effectiveX(row, xKey) {
       // For other tests, use the selected mass basis
       const fillType = getMass() === "Mass (Wine) (kg)" ? "Wine" : 
                       (getMass() === "Mass (Oil)" || getMass() === "Mass (Oil) (kg)") ? "Oil" : "Empty";
-      return getEffectiveMass(row, fillType);
+      
+      // Get the base mass per pot
+      const massPerPot = getEffectiveMass(row, fillType);
+      
+      // For Stack tests, multiply by the number of pots
+      if (test === "Stack") {
+        const n = row["n (layers)"];
+        const w = row["w (# pot)"];
+        const l = row["l (# pot)"];
+        
+        if (Number.isFinite(n) && Number.isFinite(w) && Number.isFinite(l) && Number.isFinite(massPerPot)) {
+          return massPerPot * n * w * l;
+        }
+      }
+      
+      return massPerPot;
     }
   }
 
@@ -176,10 +191,36 @@ function effectiveX(row, xKey) {
     return getEffectiveMass(row, fillType);
   }
 
-  // For other specific mass columns
-  const massBasis = getMass();
+  // For stack tests and specific mass columns
+  const test = baseTest(row?.Test || "");
+  if (test === "Stack" && xKey?.includes("Mass")) {
+    // Get the mass per pot based on the selected mass basis
+    let massPerPot;
+    if (xKey === "Mass (Wine) (kg)") {
+      massPerPot = getEffectiveMass(row, "Wine");
+    } else if (xKey === "Mass (Oil) (kg)" || xKey === "Mass (Oil)") {
+      massPerPot = getEffectiveMass(row, "Oil");
+    } else {
+      massPerPot = row?.[xKey] || 0;
+    }
+    
+    // Scale by number of pots
+    const n = row["n (layers)"];
+    const w = row["w (# pot)"];
+    const l = row["l (# pot)"];
+    
+    if (Number.isFinite(n) && Number.isFinite(w) && Number.isFinite(l) && Number.isFinite(massPerPot)) {
+      return massPerPot * n * w * l;
+    }
+    
+    return massPerPot;
+  }
+
+  // For other specific mass columns in non-stack tests
   if (xKey?.includes("Mass")) {
-    // For non-Hold tests, apply the filled mass logic
+    const massBasis = getMass();
+    
+    // For non-Hold, non-Stack tests, apply the filled mass logic
     if (massBasis === "Mass (Wine) (kg)") {
       return getEffectiveMass(row, "Wine");
     } else if (massBasis === "Mass (Oil) (kg)" || massBasis === "Mass (Oil)") {
@@ -188,7 +229,6 @@ function effectiveX(row, xKey) {
     return row?.[massBasis] || 0;
   }
 
-  const test = row?.Test?.toLowerCase() || "";
   const n = row["n (layers)"], w = row["w (# pot)"], l = row["l (# pot)"];
 
   let base = row?.[xKey];
@@ -210,7 +250,22 @@ function effectiveY(row, yKey) {
       // For other tests, use the selected mass basis
       const fillType = getMass() === "Mass (Wine) (kg)" ? "Wine" : 
                       (getMass() === "Mass (Oil)" || getMass() === "Mass (Oil) (kg)") ? "Oil" : "Empty";
-      return getEffectiveMass(row, fillType);
+      
+      // Get the base mass per pot
+      const massPerPot = getEffectiveMass(row, fillType);
+      
+      // For Stack tests, multiply by the number of pots
+      if (test === "Stack") {
+        const n = row["n (layers)"];
+        const w = row["w (# pot)"];
+        const l = row["l (# pot)"];
+        
+        if (Number.isFinite(n) && Number.isFinite(w) && Number.isFinite(l) && Number.isFinite(massPerPot)) {
+          return massPerPot * n * w * l;
+        }
+      }
+      
+      return massPerPot;
     }
   }
 
@@ -220,10 +275,36 @@ function effectiveY(row, yKey) {
     return getEffectiveMass(row, fillType);
   }
 
-  // For other specific mass columns
-  const massBasis = getMass();
+  // For stack tests and specific mass columns
+  const test = baseTest(row?.Test || "");
+  if (test === "Stack" && yKey?.includes("Mass")) {
+    // Get the mass per pot based on the selected mass basis
+    let massPerPot;
+    if (yKey === "Mass (Wine) (kg)") {
+      massPerPot = getEffectiveMass(row, "Wine");
+    } else if (yKey === "Mass (Oil) (kg)" || yKey === "Mass (Oil)") {
+      massPerPot = getEffectiveMass(row, "Oil");
+    } else {
+      massPerPot = row?.[yKey] || 0;
+    }
+    
+    // Scale by number of pots
+    const n = row["n (layers)"];
+    const w = row["w (# pot)"];
+    const l = row["l (# pot)"];
+    
+    if (Number.isFinite(n) && Number.isFinite(w) && Number.isFinite(l) && Number.isFinite(massPerPot)) {
+      return massPerPot * n * w * l;
+    }
+    
+    return massPerPot;
+  }
+
+  // For other specific mass columns in non-stack tests
   if (yKey?.includes("Mass")) {
-    // For non-Hold tests, apply the filled mass logic
+    const massBasis = getMass();
+    
+    // For non-Hold, non-Stack tests, apply the filled mass logic
     if (massBasis === "Mass (Wine) (kg)") {
       return getEffectiveMass(row, "Wine");
     } else if (massBasis === "Mass (Oil) (kg)" || massBasis === "Mass (Oil)") {
@@ -232,7 +313,6 @@ function effectiveY(row, yKey) {
     return row?.[massBasis] || 0;
   }
 
-  const test = row?.Test?.toLowerCase() || "";
   const n = row["n (layers)"], w = row["w (# pot)"], l = row["l (# pot)"];
 
   let base = row?.[yKey];
@@ -403,9 +483,6 @@ function calculateRankings() {
   // Find safe rows (FoS >= 1)
   const safeRectRows = selectedRectRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
   const safeHexRows = selectedHexRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
-  
-  // Rest of the function remains the same...
-  // [rest of the calculateRankings function]
   
   // Helper function to find reference load
   function findReferenceLoad(rows) {
@@ -905,20 +982,19 @@ function populateAmphoraeList() {
   ["Select All", "Deselect All"].forEach(label => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-outline-secondary btn-sm amph-btn";
+    btn.className = "btn btn-outline-secondary btn-sm util-btn"; // Changed to util-btn class
     btn.textContent = label;
     btn.style.fontWeight = "500";
     btn.style.marginTop = "0.25rem";
     
     // Use a safer approach for bulk selection
     btn.addEventListener("click", function() {
+      // Only select actual amphora buttons, not utility buttons
       const buttons = container.querySelectorAll(".amph-btn");
       buttons.forEach(b => {
-        if (b.textContent !== label) {
-          label === "Select All"
-            ? b.classList.add("active")
-            : b.classList.remove("active");
-        }
+        label === "Select All"
+          ? b.classList.add("active")
+          : b.classList.remove("active");
       });
       
       const currentTest = getTest();
