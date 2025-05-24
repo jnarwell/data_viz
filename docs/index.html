@@ -175,6 +175,39 @@
             </div>
           </div>
 
+          <!-- Ranking Controls (hidden by default) -->
+          <div id="rankingControlsCard" class="card mb-3 d-none">
+            <div class="card-body">
+              <h5 class="card-title">Ranking Table Columns</h5>
+              
+              <!-- Test Type Controls -->
+              <div class="mb-3">
+                <h6>Quick Controls</h6>
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-success test-control-btn" data-test="rankings">Rankings Only</button>
+                  <button type="button" class="btn btn-sm btn-outline-success test-control-btn" data-test="hold">Hold Data</button>
+                  <button type="button" class="btn btn-sm btn-outline-success test-control-btn" data-test="drop">Drop Data</button>
+                  <button type="button" class="btn btn-sm btn-outline-success test-control-btn" data-test="rect">Rect Stack Data</button>
+                  <button type="button" class="btn btn-sm btn-outline-success test-control-btn" data-test="hex">Hex Stack Data</button>
+                </div>
+              </div>
+
+              <!-- Individual Column Controls -->
+              <div class="mb-3">
+                <h6>Columns</h6>
+                <div id="columnControls" class="d-flex flex-wrap gap-1">
+                  <!-- Column toggle buttons will be added here dynamically -->
+                </div>
+              </div>
+
+              <!-- Select All/Deselect All -->
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllColumns">Select All</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="deselectAllColumns">Deselect All</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Amphora buttons -->
           
         </aside>

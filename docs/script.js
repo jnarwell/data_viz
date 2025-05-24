@@ -22,6 +22,25 @@ const PALETTE = [
   "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
 ];
 
+// Ranking table column configuration
+const RANKING_COLUMNS = {
+  overallRank: { label: "Overall Rank", group: "core", defaultSelected: true },
+  holdRank: { label: "Hold Rank", group: "hold", defaultSelected: true },
+  holdTensile: { label: "Hold Tensile", group: "hold", defaultSelected: false },
+  dropRank: { label: "Drop Rank", group: "drop", defaultSelected: true },
+  dropTensile: { label: "Drop Tensile", group: "drop", defaultSelected: false },
+  rectRank: { label: "Rect Rank", group: "rect", defaultSelected: true },
+  rectTensile: { label: "Rect Tensile", group: "rect", defaultSelected: false },
+  rectLoad: { label: "Rect Load", group: "rect", defaultSelected: false },
+  rectFoS: { label: "Rect FoS", group: "rect", defaultSelected: false },
+  hexRank: { label: "Hex Rank", group: "hex", defaultSelected: true },
+  hexTensile: { label: "Hex Tensile", group: "hex", defaultSelected: false },
+  hexLoad: { label: "Hex Load", group: "hex", defaultSelected: false },
+  hexFoS: { label: "Hex FoS", group: "hex", defaultSelected: false }
+};
+
+let selectedColumns = new Set();
+
 /* -------------------------------------------------------------
    2.  Utilities
 ------------------------------------------------------------- */
@@ -47,7 +66,6 @@ const patternOf = (testStr) => {
 };
 
 const normalizeAmphora = (name) => {
-  // Ensure we have a string to work with
   if (name === null || name === undefined) return "";
   return String(name).replace(/_(rect|hex)$/, "");
 };
@@ -88,9 +106,7 @@ const valStr = (v, label) => {
   return `${formatted} ${unit}`;
 };
 
-// Get fill type from test name
 const getFillType = (testName) => {
-  // Ensure we have a string to work with
   if (testName === null || testName === undefined) return "Empty";
   const test = String(testName).toLowerCase();
   if (test.includes("wine")) return "Wine";
@@ -98,7 +114,6 @@ const getFillType = (testName) => {
   return "Empty";
 };
 
-// Get effective mass based on fill type - for oil and wine, add empty mass
 const getEffectiveMass = (row, fillType) => {
   if (!row) return 0;
   
@@ -117,7 +132,143 @@ const getEffectiveMass = (row, fillType) => {
 };
 
 /* -------------------------------------------------------------
-   3.  Axis + Pattern Logic
+   3.  Ranking Column Controls
+------------------------------------------------------------- */
+function initializeSelectedColumns() {
+  selectedColumns.clear();
+  Object.entries(RANKING_COLUMNS).forEach(([key, config]) => {
+    if (config.defaultSelected) {
+      selectedColumns.add(key);
+    }
+  });
+}
+
+function buildColumnControls() {
+  const container = document.getElementById("columnControls");
+  if (!container) return;
+  
+  container.innerHTML = "";
+  
+  Object.entries(RANKING_COLUMNS).forEach(([key, config]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-primary column-toggle-btn";
+    btn.dataset.column = key;
+    btn.textContent = config.label;
+    
+    if (selectedColumns.has(key)) {
+      btn.classList.add("active");
+    }
+    
+    btn.addEventListener("click", function() {
+      this.classList.toggle("active");
+      if (this.classList.contains("active")) {
+        selectedColumns.add(key);
+      } else {
+        selectedColumns.delete(key);
+      }
+      updateColumnControlButtons();
+      displayRankingTable();
+    });
+    
+    container.appendChild(btn);
+  });
+}
+
+function attachColumnControlListeners() {
+  // Test type control buttons
+  document.querySelectorAll(".test-control-btn").forEach(btn => {
+    btn.addEventListener("click", function() {
+      const testType = this.dataset.test;
+      const isCurrentlyActive = this.classList.contains("active");
+      
+      // Define column groups for each test type
+      const testTypeColumns = {
+        rankings: ["holdRank", "dropRank", "rectRank", "hexRank"],
+        hold: ["holdRank", "holdTensile"],
+        drop: ["dropRank", "dropTensile"],
+        rect: ["rectRank", "rectTensile", "rectLoad", "rectFoS"],
+        hex: ["hexRank", "hexTensile", "hexLoad", "hexFoS"]
+      };
+      
+      if (isCurrentlyActive) {
+        // If clicking the active button, deselect its columns
+        this.classList.remove("active");
+        testTypeColumns[testType].forEach(col => {
+          selectedColumns.delete(col);
+        });
+      } else {
+        // Activate this button and add its columns
+        this.classList.add("active");
+        
+        // Always ensure overall rank is selected
+        selectedColumns.add("overallRank");
+        
+        // Add columns for this test type
+        testTypeColumns[testType].forEach(col => {
+          selectedColumns.add(col);
+        });
+      }
+      
+      // Update UI and table
+      updateColumnControlButtons();
+      displayRankingTable();
+    });
+  });
+  
+  // Select All/Deselect All buttons
+  document.getElementById("selectAllColumns")?.addEventListener("click", function() {
+    selectedColumns.clear();
+    Object.keys(RANKING_COLUMNS).forEach(key => selectedColumns.add(key));
+    updateColumnControlButtons();
+    displayRankingTable();
+  });
+  
+  document.getElementById("deselectAllColumns")?.addEventListener("click", function() {
+    selectedColumns.clear();
+    selectedColumns.add("overallRank"); // Always keep overall rank
+    updateColumnControlButtons();
+    displayRankingTable();
+  });
+}
+
+function updateColumnControlButtons() {
+  // Update individual column toggle buttons
+  document.querySelectorAll(".column-toggle-btn").forEach(btn => {
+    const key = btn.dataset.column;
+    if (selectedColumns.has(key)) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+  
+  // Update quick control buttons based on current selection
+  const testTypeColumns = {
+    rankings: ["holdRank", "dropRank", "rectRank", "hexRank"],
+    hold: ["holdRank", "holdTensile"],
+    drop: ["dropRank", "dropTensile"],
+    rect: ["rectRank", "rectTensile", "rectLoad", "rectFoS"],
+    hex: ["hexRank", "hexTensile", "hexLoad", "hexFoS"]
+  };
+  
+  document.querySelectorAll(".test-control-btn").forEach(btn => {
+    const testType = btn.dataset.test;
+    const requiredColumns = testTypeColumns[testType];
+    
+    // Check if ALL columns for this test type are selected
+    const allSelected = requiredColumns.every(col => selectedColumns.has(col));
+    
+    if (allSelected) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+}
+
+/* -------------------------------------------------------------
+   4.  Axis + Pattern Logic
 ------------------------------------------------------------- */
 function toggleUIControls() {
   const test = getTest();
@@ -127,6 +278,12 @@ function toggleUIControls() {
   const stackPatternWrap = document.getElementById("stackPatternWrap");
   if (stackPatternWrap) {
     stackPatternWrap.classList.toggle("d-none", test !== "Stack");
+  }
+  
+  // Show/hide ranking controls
+  const rankingControlsCard = document.getElementById("rankingControlsCard");
+  if (rankingControlsCard) {
+    rankingControlsCard.classList.toggle("d-none", !isRanking);
   }
   
   // Show/hide mass toggle based on test
@@ -156,21 +313,17 @@ function toggleUIControls() {
 }
 
 function effectiveX(row, xKey) {
-  // Handle consolidated "Mass" option
   if (xKey === "Mass") {
     const test = baseTest(row?.Test || "");
     if (test === "Hold") {
       const fillType = getFillType(row?.Test);
       return getEffectiveMass(row, fillType);
     } else {
-      // For other tests, use the selected mass basis
       const fillType = getMass() === "Mass (Wine) (kg)" ? "Wine" : 
                       (getMass() === "Mass (Oil)" || getMass() === "Mass (Oil) (kg)") ? "Oil" : "Empty";
       
-      // Get the base mass per pot
       const massPerPot = getEffectiveMass(row, fillType);
       
-      // For Stack tests, multiply by the number of pots
       if (test === "Stack") {
         const n = row["n (layers)"];
         const w = row["w (# pot)"];
@@ -185,16 +338,13 @@ function effectiveX(row, xKey) {
     }
   }
 
-  // For Hold tests with specific mass columns
   if (baseTest(row?.Test || "") === "Hold" && xKey?.includes("Mass")) {
     const fillType = getFillType(row?.Test);
     return getEffectiveMass(row, fillType);
   }
 
-  // For stack tests and specific mass columns
   const test = baseTest(row?.Test || "");
   if (test === "Stack" && xKey?.includes("Mass")) {
-    // Get the mass per pot based on the selected mass basis
     let massPerPot;
     if (xKey === "Mass (Wine) (kg)") {
       massPerPot = getEffectiveMass(row, "Wine");
@@ -204,7 +354,6 @@ function effectiveX(row, xKey) {
       massPerPot = row?.[xKey] || 0;
     }
     
-    // Scale by number of pots
     const n = row["n (layers)"];
     const w = row["w (# pot)"];
     const l = row["l (# pot)"];
@@ -216,11 +365,9 @@ function effectiveX(row, xKey) {
     return massPerPot;
   }
 
-  // For other specific mass columns in non-stack tests
   if (xKey?.includes("Mass")) {
     const massBasis = getMass();
     
-    // For non-Hold, non-Stack tests, apply the filled mass logic
     if (massBasis === "Mass (Wine) (kg)") {
       return getEffectiveMass(row, "Wine");
     } else if (massBasis === "Mass (Oil) (kg)" || massBasis === "Mass (Oil)") {
@@ -240,21 +387,17 @@ function effectiveX(row, xKey) {
 }
 
 function effectiveY(row, yKey) {
-  // Handle consolidated "Mass" option
   if (yKey === "Mass") {
     const test = baseTest(row?.Test || "");
     if (test === "Hold") {
       const fillType = getFillType(row?.Test);
       return getEffectiveMass(row, fillType);
     } else {
-      // For other tests, use the selected mass basis
       const fillType = getMass() === "Mass (Wine) (kg)" ? "Wine" : 
                       (getMass() === "Mass (Oil)" || getMass() === "Mass (Oil) (kg)") ? "Oil" : "Empty";
       
-      // Get the base mass per pot
       const massPerPot = getEffectiveMass(row, fillType);
       
-      // For Stack tests, multiply by the number of pots
       if (test === "Stack") {
         const n = row["n (layers)"];
         const w = row["w (# pot)"];
@@ -269,16 +412,13 @@ function effectiveY(row, yKey) {
     }
   }
 
-  // For Hold tests with specific mass columns
   if (baseTest(row?.Test || "") === "Hold" && yKey?.includes("Mass")) {
     const fillType = getFillType(row?.Test);
     return getEffectiveMass(row, fillType);
   }
 
-  // For stack tests and specific mass columns
   const test = baseTest(row?.Test || "");
   if (test === "Stack" && yKey?.includes("Mass")) {
-    // Get the mass per pot based on the selected mass basis
     let massPerPot;
     if (yKey === "Mass (Wine) (kg)") {
       massPerPot = getEffectiveMass(row, "Wine");
@@ -288,7 +428,6 @@ function effectiveY(row, yKey) {
       massPerPot = row?.[yKey] || 0;
     }
     
-    // Scale by number of pots
     const n = row["n (layers)"];
     const w = row["w (# pot)"];
     const l = row["l (# pot)"];
@@ -300,11 +439,9 @@ function effectiveY(row, yKey) {
     return massPerPot;
   }
 
-  // For other specific mass columns in non-stack tests
   if (yKey?.includes("Mass")) {
     const massBasis = getMass();
     
-    // For non-Hold, non-Stack tests, apply the filled mass logic
     if (massBasis === "Mass (Wine) (kg)") {
       return getEffectiveMass(row, "Wine");
     } else if (massBasis === "Mass (Oil) (kg)" || massBasis === "Mass (Oil)") {
@@ -324,7 +461,7 @@ function effectiveY(row, yKey) {
 }
 
 /* -------------------------------------------------------------
-   4.  Build UI
+   5.  Build UI
 ------------------------------------------------------------- */
 function buildSelect(id, options, defVal) {
   const sel = document.getElementById(id);
@@ -341,40 +478,32 @@ function buildSelect(id, options, defVal) {
 }
 
 function buildAxisSelectors() {
-  // Get all columns that have numeric values
   const allCols = Object.keys(rawRows[0] || {}).filter((col) =>
     rawRows.some((r) => Number.isFinite(r[col]) && r[col] !== 0)
   );
   
-  // Filter out individual mass columns
   const massRegex = /^Mass\s*\((Empty|Wine|Oil)\)(\s*\(kg\))?$/;
   const filteredCols = allCols.filter(col => !massRegex.test(col));
   
-  // Create prioritized x-axis columns
   const xAxisPriority = [
     "Load (N)",
-    "Mass", // Our consolidated Mass option
+    "Mass",
     "Height (m)"
   ];
   
-  // Create prioritized y-axis columns
   const yAxisPriority = [
     "Max Tensile (MPa)",
     "Max Compressive (MPa)",
     "Factor of Safety"
   ];
   
-  // Create final ordered arrays by priority
   let xAxisCols = [...xAxisPriority];
   let yAxisCols = [...yAxisPriority];
   
-  // Add the consolidated "Mass" option if not already in priority list
-  // and if mass columns exist
   if (!xAxisCols.includes("Mass") && allCols.some(col => massRegex.test(col))) {
     xAxisCols.push("Mass");
   }
   
-  // Add remaining columns that aren't already in the prioritized lists
   filteredCols.forEach(col => {
     if (!xAxisCols.includes(col)) {
       xAxisCols.push(col);
@@ -384,22 +513,18 @@ function buildAxisSelectors() {
     }
   });
   
-  // Remove any priority columns that don't exist in the actual data
   xAxisCols = xAxisCols.filter(col => col === "Mass" || filteredCols.includes(col));
   yAxisCols = yAxisCols.filter(col => col === "Mass" || filteredCols.includes(col));
   
-  // Determine default x-axis based on test type
   const currentTest = getTest();
   let defaultXAxis = "Load (N)";
   
   if (currentTest === "Drop") {
     defaultXAxis = "Height (m)";
   } else if (currentTest === "Hold") {
-    // For Hold test, use Mass as default if available
     defaultXAxis = xAxisCols.includes("Mass") ? "Mass" : "Load (N)";
   }
   
-  // Set fallbacks if the defaults don't exist in the data
   if (!xAxisCols.includes(defaultXAxis)) {
     defaultXAxis = xAxisCols[0];
   }
@@ -409,24 +534,21 @@ function buildAxisSelectors() {
     defaultYAxis = yAxisCols[0];
   }
   
-  // Build the dropdowns with the ordered arrays
   buildSelect("xAxis", xAxisCols, defaultXAxis);
   buildSelect("yAxis", yAxisCols, defaultYAxis);
 }
 
 /* -------------------------------------------------------------
-   5.  Rankings Table Functions 
+   6.  Rankings Table Functions 
 ------------------------------------------------------------- */
 function calculateRankings() {
   const selected = getSelectedAmphorae();
   if (!selected || !selected.length) return [];
   
-  // Ensure each amphora has all required data
   const completeAmphorae = selected.filter(amphora => {
     if (!amphora) return false;
     const normalizedName = normalizeAmphora(amphora);
     
-    // Minimum required data: data in both stack arrangements, hold, and drop
     const hasRectData = rawRows.some(r => 
       baseTest(r.Test) === "Stack" && 
       patternOf(r.Test) === "Rect" &&
@@ -460,12 +582,10 @@ function calculateRankings() {
     return [];
   }
   
-  // Filter stack data by arrangement
   const stackRows = rawRows.filter(r => baseTest(r.Test) === "Stack");
   const rectRows = stackRows.filter(r => patternOf(r.Test) === "Rect");
   const hexRows = stackRows.filter(r => patternOf(r.Test) === "Hex");
   
-  // Filter to only include selected amphorae - more safely
   const selectedRectRows = rectRows.filter(r => {
     const ampName = r[AMPH_COL(r)];
     if (!ampName) return false;
@@ -480,13 +600,10 @@ function calculateRankings() {
     return completeAmphorae.some(a => a === ampName || normalizeAmphora(a) === normalizedName);
   });
   
-  // Find safe rows (FoS >= 1)
   const safeRectRows = selectedRectRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
   const safeHexRows = selectedHexRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
   
-  // Helper function to find reference load
   function findReferenceLoad(rows) {
-    // Group by amphora and find points with FoS closest to 1
     const amphoraeClosestFoS = {};
     
     rows.forEach(row => {
@@ -494,7 +611,6 @@ function calculateRankings() {
       const fos = row["Factor of Safety"] || 0;
       const load = row["Load (N)"] || 0;
       
-      // Skip invalid data
       if (fos <= 0 || load <= 0) return;
       
       const diffFromFoS1 = Math.abs(fos - 1);
@@ -504,7 +620,6 @@ function calculateRankings() {
       }
     });
     
-    // Find max load among these points
     let maxLoad = 0;
     Object.values(amphoraeClosestFoS).forEach(point => {
       if (point.load > maxLoad) {
@@ -515,11 +630,9 @@ function calculateRankings() {
     return maxLoad;
   }
   
-  // Find reference loads for both arrangements
-  refRectLoad = findReferenceLoad(safeRectRows);
-  refHexLoad = findReferenceLoad(safeHexRows);
+  let refRectLoad = findReferenceLoad(safeRectRows);
+  let refHexLoad = findReferenceLoad(safeHexRows);
   
-  // If no safe rows found, use max load available among selected amphorae
   if (refRectLoad === 0) {
     refRectLoad = Math.max(...selectedRectRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
   }
@@ -528,29 +641,22 @@ function calculateRankings() {
     refHexLoad = Math.max(...selectedHexRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
   }
   
-  // Initialize data structure for each amphora
   const amphoraeData = {};
   completeAmphorae.forEach(amp => {
     const normalizedName = normalizeAmphora(amp);
     amphoraeData[normalizedName] = {
       name: amp,
-      // Rect metrics
       rectLoad: 0,
       rectFoS: 0,
       rectTensile: 0,
-      // Hex metrics
       hexLoad: 0,
       hexFoS: 0,
       hexTensile: 0,
-      // Hold metrics
       holdTensileValues: [],
       holdTensile: 0,
-      // Drop metrics
       dropTensileValues: [],
       dropTensile: 0,
-      // Internal volume
       volume: 0,
-      // Rankings
       rectRank: 0,
       hexRank: 0,
       holdRank: 0,
@@ -560,7 +666,6 @@ function calculateRankings() {
     };
   });
   
-  // Helper function to find closest data point to reference load
   function findClosestToRef(rows, refLoad, ampName) {
     let closestRow = null;
     let minDiff = Infinity;
@@ -582,20 +687,17 @@ function calculateRankings() {
     return closestRow;
   }
   
-  // Process rectangle arrangement data
   completeAmphorae.forEach(amp => {
     const normalizedName = normalizeAmphora(amp);
     
-    // Find closest rect data point to reference load
     const rectRow = findClosestToRef(rectRows, refRectLoad, normalizedName);
     if (rectRow) {
       amphoraeData[normalizedName].rectLoad = rectRow["Load (N)"] || 0;
       amphoraeData[normalizedName].rectFoS = rectRow["Factor of Safety"] || 0;
       amphoraeData[normalizedName].rectTensile = rectRow["Max Tensile (MPa)"] || 0;
-      amphoraeData[normalizedName].volume = (rectRow["Internal Volume (mm^3)"] || 0) / 1e6; // Convert to L
+      amphoraeData[normalizedName].volume = (rectRow["Internal Volume (mm^3)"] || 0) / 1e6;
     }
     
-    // Find closest hex data point to reference load
     const hexRow = findClosestToRef(hexRows, refHexLoad, normalizedName);
     if (hexRow) {
       amphoraeData[normalizedName].hexLoad = hexRow["Load (N)"] || 0;
@@ -604,7 +706,6 @@ function calculateRankings() {
     }
   });
   
-  // Process hold data - calculate mean tensile stress
   const holdRows = rawRows.filter(r => baseTest(r.Test) === "Hold");
   holdRows.forEach(row => {
     const amp = normalizeAmphora(row[AMPH_COL(row)]);
@@ -616,7 +717,6 @@ function calculateRankings() {
     amphoraeData[amp].holdTensileValues.push(tensile);
   });
   
-  // Calculate mean hold tensile for each amphora
   Object.values(amphoraeData).forEach(amp => {
     if (amp.holdTensileValues.length > 0) {
       const sum = amp.holdTensileValues.reduce((a, b) => a + b, 0);
@@ -624,7 +724,6 @@ function calculateRankings() {
     }
   });
   
-  // Process drop data - calculate mean tensile stress
   const dropRows = rawRows.filter(r => baseTest(r.Test) === "Drop");
   dropRows.forEach(row => {
     const amp = normalizeAmphora(row[AMPH_COL(row)]);
@@ -636,7 +735,6 @@ function calculateRankings() {
     amphoraeData[amp].dropTensileValues.push(tensile);
   });
   
-  // Calculate mean drop tensile for each amphora
   Object.values(amphoraeData).forEach(amp => {
     if (amp.dropTensileValues.length > 0) {
       const sum = amp.dropTensileValues.reduce((a, b) => a + b, 0);
@@ -644,10 +742,8 @@ function calculateRankings() {
     }
   });
   
-  // Convert to array for ranking
   let results = Object.values(amphoraeData);
   
-  // Filter amphorae with missing metrics
   results = results.filter(amp => 
     amp.rectTensile > 0 && 
     amp.hexTensile > 0 && 
@@ -659,7 +755,6 @@ function calculateRankings() {
     return [];
   }
   
-  // Rank by tensile stress (lower is better) for each category
   results.sort((a, b) => a.rectTensile - b.rectTensile);
   results.forEach((amp, i) => { amp.rectRank = i + 1; });
   
@@ -672,7 +767,6 @@ function calculateRankings() {
   results.sort((a, b) => a.dropTensile - b.dropTensile);
   results.forEach((amp, i) => { amp.dropRank = i + 1; });
   
-  // Calculate overall score (sum of ranks) and overall rank
   results.forEach(amp => {
     amp.overallScore = amp.rectRank + amp.hexRank + amp.holdRank + amp.dropRank;
   });
@@ -692,118 +786,6 @@ function displayRankingTable() {
     return;
   }
   
-  // Get selected amphorae that didn't make it into rankings
-  const selected = getSelectedAmphorae() || [];
-  // Safely check for missing amphorae
-  const missingAmphorae = selected.filter(amp => {
-    if (!amp) return false;
-    return !rankings.some(r => r && r.name === amp);
-  });
-  
-  if (!rankings.length) {
-    tableEl.innerHTML = `
-      <div class="alert alert-info">
-        <strong>No complete data available.</strong><br>
-        Please select at least one amphora with complete test data.
-      </div>`;
-    return;
-  }
-  
-  // Helper function to safely format numbers
-  const safeFormat = (value) => {
-    if (value === undefined || value === null || isNaN(value) || value === 0) {
-      return "–"; // Em dash for missing data
-    }
-    return Number(value).toFixed(2);
-  };
-  
-  // Create table HTML with data availability warning if needed
-  let html = '';
-  
-  // More defensive check for missingAmphorae
-  if (missingAmphorae && missingAmphorae.length > 0) {
-    const validMissing = missingAmphorae.filter(amp => amp && typeof amp === 'string' && amp.trim() !== '');
-    if (validMissing.length > 0) {
-      html += `
-        <div class="alert alert-warning mb-3">
-          <strong>Data Availability Notice:</strong><br>
-          The following selected amphorae do not appear in rankings due to incomplete data: 
-          <strong>${validMissing.join(", ")}</strong><br>
-          Amphorae must have data for all test types (Stack in both Rect and Hex arrangements, Hold, and Drop) to be included.
-        </div>
-      `;
-    }
-  }
-  
-  // Create table HTML - reordered with Hold and Drop first
-  html += `
-    <table class="table table-striped table-hover">
-      <thead>
-        <tr>
-          <th rowspan="2">Overall<br>Rank</th>
-          <th rowspan="2">Amphora</th>
-          <th colspan="2">Hold</th>
-          <th colspan="2">Drop</th>
-          <th colspan="4">Rect Stack</th>
-          <th colspan="4">Hex Stack</th>
-        </tr>
-        <tr>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Load (N)</th>
-          <th>FoS</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Load (N)</th>
-          <th>FoS</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-  
-  rankings.forEach((amp) => {
-    html += `
-      <tr>
-        <td><strong>${amp.overallRank || '–'}</strong></td>
-        <td>${amp.name || '–'}</td>
-        <td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>
-        <td>${safeFormat(amp.holdTensile)} MPa</td>
-        <td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>
-        <td>${safeFormat(amp.dropTensile)} MPa</td>
-        <td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>
-        <td>${safeFormat(amp.rectTensile)} MPa</td>
-        <td>${safeFormat(amp.rectLoad)} N</td>
-        <td>${safeFormat(amp.rectFoS)}</td>
-        <td>${amp.hexRank ? '#' + amp.hexRank : '–'}</td>
-        <td>${safeFormat(amp.hexTensile)} MPa</td>
-        <td>${safeFormat(amp.hexLoad)} N</td>
-        <td>${safeFormat(amp.hexFoS)}</td>
-      </tr>
-    `;
-  });
-  
-  html += `
-      </tbody>
-    </table>
-  `;
-  
-  tableEl.innerHTML = html;
-}
-
-function displayRankingTable() {
-  const rankings = calculateRankings();
-  const tableEl = document.getElementById("rankingTable");
-  
-  if (!tableEl) {
-    console.error("Ranking table element not found");
-    return;
-  }
-  
-  // Get selected amphorae that didn't make it into rankings
   const selected = getSelectedAmphorae();
   const missingAmphorae = selected.filter(amp => 
     !rankings.some(r => r.name === amp)
@@ -818,18 +800,15 @@ function displayRankingTable() {
     return;
   }
   
-  // Helper function to safely format numbers
   const safeFormat = (value) => {
     if (value === undefined || value === null || isNaN(value) || value === 0) {
-      return "–"; // Em dash for missing data
+      return "–";
     }
     return Number(value).toFixed(2);
   };
   
-  // Create table HTML with data availability warning if needed
   let html = '';
   
-  // Only show warning if there are actual missing amphorae with non-empty names
   if (missingAmphorae.length > 0 && missingAmphorae.some(amp => amp && amp.trim())) {
     html += `
       <div class="alert alert-warning mb-3">
@@ -841,61 +820,93 @@ function displayRankingTable() {
     `;
   }
   
-  // Create table HTML - reordered with Hold and Drop first
-  html += `
-    <table class="table table-striped table-hover">
-      <thead>
-        <tr>
-          <th rowspan="2">Overall<br>Rank</th>
-          <th rowspan="2">Amphora</th>
-          <th colspan="2">Hold</th>
-          <th colspan="2">Drop</th>
-          <th colspan="4">Rect Stack</th>
-          <th colspan="4">Hex Stack</th>
-        </tr>
-        <tr>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Load (N)</th>
-          <th>FoS</th>
-          <th>Rank</th>
-          <th>Tensile (MPa)</th>
-          <th>Load (N)</th>
-          <th>FoS</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
+  // Build table headers based on selected columns
+  html += `<table class="table table-striped table-hover"><thead>`;
   
+  // First header row
+  html += `<tr>`;
+  if (selectedColumns.has("overallRank")) {
+    html += `<th rowspan="2">Overall<br>Rank</th>`;
+  }
+  html += `<th rowspan="2">Amphora</th>`;
+  
+  // Group headers
+  const hasHoldColumns = selectedColumns.has("holdRank") || selectedColumns.has("holdTensile");
+  const hasDropColumns = selectedColumns.has("dropRank") || selectedColumns.has("dropTensile");
+  const hasRectColumns = selectedColumns.has("rectRank") || selectedColumns.has("rectTensile") || 
+                        selectedColumns.has("rectLoad") || selectedColumns.has("rectFoS");
+  const hasHexColumns = selectedColumns.has("hexRank") || selectedColumns.has("hexTensile") || 
+                       selectedColumns.has("hexLoad") || selectedColumns.has("hexFoS");
+  
+  if (hasHoldColumns) {
+    const holdColCount = (selectedColumns.has("holdRank") ? 1 : 0) + 
+                        (selectedColumns.has("holdTensile") ? 1 : 0);
+    html += `<th colspan="${holdColCount}">Hold</th>`;
+  }
+  
+  if (hasDropColumns) {
+    const dropColCount = (selectedColumns.has("dropRank") ? 1 : 0) + 
+                        (selectedColumns.has("dropTensile") ? 1 : 0);
+    html += `<th colspan="${dropColCount}">Drop</th>`;
+  }
+  
+  if (hasRectColumns) {
+    const rectColCount = (selectedColumns.has("rectRank") ? 1 : 0) + 
+                        (selectedColumns.has("rectTensile") ? 1 : 0) +
+                        (selectedColumns.has("rectLoad") ? 1 : 0) +
+                        (selectedColumns.has("rectFoS") ? 1 : 0);
+    html += `<th colspan="${rectColCount}">Rect Stack</th>`;
+  }
+  
+  if (hasHexColumns) {
+    const hexColCount = (selectedColumns.has("hexRank") ? 1 : 0) + 
+                       (selectedColumns.has("hexTensile") ? 1 : 0) +
+                       (selectedColumns.has("hexLoad") ? 1 : 0) +
+                       (selectedColumns.has("hexFoS") ? 1 : 0);
+    html += `<th colspan="${hexColCount}">Hex Stack</th>`;
+  }
+  
+  html += `</tr>`;
+  
+  // Second header row
+  html += `<tr>`;
+  if (selectedColumns.has("holdRank")) html += `<th>Rank</th>`;
+  if (selectedColumns.has("holdTensile")) html += `<th>Tensile (MPa)</th>`;
+  if (selectedColumns.has("dropRank")) html += `<th>Rank</th>`;
+  if (selectedColumns.has("dropTensile")) html += `<th>Tensile (MPa)</th>`;
+  if (selectedColumns.has("rectRank")) html += `<th>Rank</th>`;
+  if (selectedColumns.has("rectTensile")) html += `<th>Tensile (MPa)</th>`;
+  if (selectedColumns.has("rectLoad")) html += `<th>Load (N)</th>`;
+  if (selectedColumns.has("rectFoS")) html += `<th>FoS</th>`;
+  if (selectedColumns.has("hexRank")) html += `<th>Rank</th>`;
+  if (selectedColumns.has("hexTensile")) html += `<th>Tensile (MPa)</th>`;
+  if (selectedColumns.has("hexLoad")) html += `<th>Load (N)</th>`;
+  if (selectedColumns.has("hexFoS")) html += `<th>FoS</th>`;
+  html += `</tr></thead><tbody>`;
+  
+  // Table rows
   rankings.forEach((amp) => {
-    html += `
-      <tr>
-        <td><strong>${amp.overallRank || '–'}</strong></td>
-        <td>${amp.name || '–'}</td>
-        <td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>
-        <td>${safeFormat(amp.holdTensile)} MPa</td>
-        <td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>
-        <td>${safeFormat(amp.dropTensile)} MPa</td>
-        <td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>
-        <td>${safeFormat(amp.rectTensile)} MPa</td>
-        <td>${safeFormat(amp.rectLoad)} N</td>
-        <td>${safeFormat(amp.rectFoS)}</td>
-        <td>${amp.hexRank ? '#' + amp.hexRank : '–'}</td>
-        <td>${safeFormat(amp.hexTensile)} MPa</td>
-        <td>${safeFormat(amp.hexLoad)} N</td>
-        <td>${safeFormat(amp.hexFoS)}</td>
-      </tr>
-    `;
+    html += `<tr>`;
+    if (selectedColumns.has("overallRank")) {
+      html += `<td><strong>${amp.overallRank || '–'}</strong></td>`;
+    }
+    html += `<td>${amp.name || '–'}</td>`;
+    if (selectedColumns.has("holdRank")) html += `<td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>`;
+    if (selectedColumns.has("holdTensile")) html += `<td>${safeFormat(amp.holdTensile)} MPa</td>`;
+    if (selectedColumns.has("dropRank")) html += `<td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>`;
+    if (selectedColumns.has("dropTensile")) html += `<td>${safeFormat(amp.dropTensile)} MPa</td>`;
+    if (selectedColumns.has("rectRank")) html += `<td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>`;
+    if (selectedColumns.has("rectTensile")) html += `<td>${safeFormat(amp.rectTensile)} MPa</td>`;
+    if (selectedColumns.has("rectLoad")) html += `<td>${safeFormat(amp.rectLoad)} N</td>`;
+    if (selectedColumns.has("rectFoS")) html += `<td>${safeFormat(amp.rectFoS)}</td>`;
+    if (selectedColumns.has("hexRank")) html += `<td>${amp.hexRank ? '#' + amp.hexRank : '–'}</td>`;
+    if (selectedColumns.has("hexTensile")) html += `<td>${safeFormat(amp.hexTensile)} MPa</td>`;
+    if (selectedColumns.has("hexLoad")) html += `<td>${safeFormat(amp.hexLoad)} N</td>`;
+    if (selectedColumns.has("hexFoS")) html += `<td>${safeFormat(amp.hexFoS)}</td>`;
+    html += `</tr>`;
   });
   
-  html += `
-      </tbody>
-    </table>
-  `;
+  html += `</tbody></table>`;
   
   tableEl.innerHTML = html;
 }
@@ -907,9 +918,7 @@ function populateAmphoraeList() {
   const yKey = getYAxis();
   const amphoraeSet = new Set();
   
-  // For ranking mode, only show amphorae with data in all test types
   if (test === "Ranking") {
-    // Get amphorae with data in each test type
     const stackAmphorae = new Set();
     const holdAmphorae = new Set();
     const dropAmphorae = new Set();
@@ -933,14 +942,12 @@ function populateAmphoraeList() {
       }
     });
     
-    // Keep only amphorae that exist in all three test types
     stackAmphorae.forEach(amp => {
       if (holdAmphorae.has(amp) && dropAmphorae.has(amp)) {
         amphoraeSet.add(amp);
       }
     });
   } else {
-    // Regular behavior for non-ranking modes
     rawRows.forEach(row => {
       if (baseTest(row.Test) !== test) return;
       if (patternFilter !== "all" && patternOf(row.Test) !== patternFilter) return;
@@ -965,7 +972,6 @@ function populateAmphoraeList() {
       btn.classList.add("active");
     }
     
-    // Use a safer approach for the click handler
     btn.addEventListener("click", function() {
       this.classList.toggle("active");
       const currentTest = getTest();
@@ -982,14 +988,12 @@ function populateAmphoraeList() {
   ["Select All", "Deselect All"].forEach(label => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-outline-secondary btn-sm util-btn"; // Changed to util-btn class
+    btn.className = "btn btn-outline-secondary btn-sm util-btn";
     btn.textContent = label;
     btn.style.fontWeight = "500";
     btn.style.marginTop = "0.25rem";
     
-    // Use a safer approach for bulk selection
     btn.addEventListener("click", function() {
-      // Only select actual amphora buttons, not utility buttons
       const buttons = container.querySelectorAll(".amph-btn");
       buttons.forEach(b => {
         label === "Select All"
@@ -1010,7 +1014,7 @@ function populateAmphoraeList() {
 }
 
 /* -------------------------------------------------------------
-   6.  Data Load + Chart
+   7.  Data Load + Chart
 ------------------------------------------------------------- */
 async function fetchRows(test) {
   if (cache[test]) return cache[test];
@@ -1045,10 +1049,8 @@ function processHoldTestData(selected, xKey, yKey) {
   const datasets = [];
   
   for (const amp of selected) {
-    // Find all test variants (empty, wine, oil) for this amphora
     const baseAmpName = normalizeAmphora(amp);
     
-    // Get all rows for this amphora in Hold tests
     const rows = rawRows.filter(r => 
       normalizeAmphora(r[AMPH_COL(r)]) === baseAmpName && 
       baseTest(r.Test) === "Hold"
@@ -1056,14 +1058,11 @@ function processHoldTestData(selected, xKey, yKey) {
     
     if (!rows.length) continue;
     
-    // Create data points for each mass variant (empty/wine/oil)
     const data = [];
     
     for (const r of rows) {
-      // Determine fill type from test name
       const fillType = getFillType(r.Test);
       
-      // For x/y axis: handle mass specially
       let x, y;
       if (xKey === "Mass" || xKey?.includes("Mass")) {
         x = getEffectiveMass(r, fillType);
@@ -1077,7 +1076,6 @@ function processHoldTestData(selected, xKey, yKey) {
         y = r[yKey];
       }
       
-      // Only add valid data points
       if (Number.isFinite(x) && Number.isFinite(y)) {
         data.push({
           x: x,
@@ -1089,7 +1087,6 @@ function processHoldTestData(selected, xKey, yKey) {
       }
     }
     
-    // Sort by x-value for proper line rendering
     data.sort((a, b) => a.x - b.x);
     
     if (data.length > 0) {
@@ -1122,10 +1119,8 @@ function updatePlot() {
     let datasets = [];
     
     if (isHoldTest && (xKey === "Mass" || yKey === "Mass")) {
-      // Special processing for Hold tests with mass as an axis
       datasets = processHoldTestData(selected, xKey, yKey);
     } else {
-      // Normal processing for other tests
       datasets = selected.map(amp => {
         const data = rawRows.filter(r =>
           r[AMPH_COL(r)] === amp &&
@@ -1177,26 +1172,21 @@ function updatePlot() {
                 const fillType = ctx.raw.__fillType;
                 const test = baseTest(r.Test || "");
                 
-                // Get formatted x and y values
                 const xVal = ctx.raw.x;
                 const yVal = ctx.raw.y;
                 const x = valStr(xVal, getXAxis());
                 const y = valStr(yVal, getYAxis());
                 
-                // Base label
                 let label = `${ctx.dataset.label}`;
                 
-                // For Hold tests, add fill type
                 if (test === "Hold" && fillType) {
                   label += ` (${fillType})`;
                 }
                 
                 label += `: (${x}, ${y})`;
                 
-                // For Stack and Drop tests, add total mass calculation
                 if (test !== "Hold") {
                   const massBasis = getMass();
-                  // Get stack/grid dimensions once
                   const n = r["n (layers)"];
                   const w = r["w (# pot)"];
                   const l = r["l (# pot)"];
@@ -1205,10 +1195,8 @@ function updatePlot() {
                   const fillType = massBasis === "Mass (Wine) (kg)" ? "Wine" : 
                                   (massBasis === "Mass (Oil)" || massBasis === "Mass (Oil) (kg)") ? "Oil" : "Empty";
                   
-                  // Get base mass per pot based on fill type
                   const massPerPot = getEffectiveMass(r, fillType);
                   
-                  // Scale by number of pots if available
                   totalMass = Number.isFinite(n) && Number.isFinite(w) && 
                               Number.isFinite(l) && Number.isFinite(massPerPot)
                               ? (n * w * l * massPerPot)
@@ -1256,18 +1244,15 @@ function updatePlot() {
 }
 
 /* -------------------------------------------------------------
-   7.  Main
+   8.  Main
 ------------------------------------------------------------- */
 async function onControlChange() {
   try {
     const test = getTest();
     
-    // Check if we need to load new data
     if (test !== lastTestLoaded) {
       if (test === "Ranking") {
-        // Load all data for ranking
         try {
-          // Load data from each test type
           const promises = [];
           
           if (!cache["Stack"]) {
@@ -1291,10 +1276,8 @@ async function onControlChange() {
             }));
           }
           
-          // Wait for all data to load
           const results = await Promise.all(promises);
           
-          // Combine data from all test types and cached data
           rawRows = [
             ...(cache["Stack"] || []), 
             ...(cache["Hold"] || []), 
@@ -1305,7 +1288,6 @@ async function onControlChange() {
           rawRows = [];
         }
       } else {
-        // Load data for the selected test type
         rawRows = await fetchRows(test);
       }
       
@@ -1313,11 +1295,9 @@ async function onControlChange() {
       lastTestLoaded = test;
     }
     
-    // Update UI based on selected test
     toggleUIControls();
     populateAmphoraeList();
     
-    // Display either ranking table or plot
     if (test === "Ranking") {
       displayRankingTable();
     } else {
@@ -1330,13 +1310,11 @@ async function onControlChange() {
 }
 
 function attachListeners() {
-  // Attach listeners to axes selectors
   ["xAxis", "yAxis"].forEach(id => {
     const element = document.getElementById(id);
     if (element) element.addEventListener("change", updatePlot);
   });
   
-  // Attach listeners to radio button groups
   ["mass", "test", "pattern"].forEach(name => {
     document.querySelectorAll(`input[name=${name}]`)
       .forEach(el => el.addEventListener("change", onControlChange));
@@ -1344,10 +1322,9 @@ function attachListeners() {
 }
 
 /* -------------------------------------------------------------
-   8.  Initialization
+   9.  Initialization
 ------------------------------------------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  // Add ranking table div
   const chartBody = document.querySelector("#chart-wrap .card-body");
   if (chartBody) {
     const rankingTable = document.createElement("div");
@@ -1356,9 +1333,11 @@ document.addEventListener("DOMContentLoaded", () => {
     chartBody.appendChild(rankingTable);
   }
   
-  // Attach event listeners
-  attachListeners();
+  // Initialize ranking column selection
+  initializeSelectedColumns();
+  buildColumnControls();
+  attachColumnControlListeners();
   
-  // Initialize with first load
+  attachListeners();
   onControlChange();
 });
