@@ -28,7 +28,7 @@ const RANKING_COLUMNS = {
   holdRank: { label: "Hold Rank", group: "hold", defaultSelected: true },
   holdTensile: { label: "Hold Tensile", group: "hold", defaultSelected: false },
   dropRank: { label: "Drop Rank", group: "drop", defaultSelected: true },
-  dropTensile: { label: "Drop Tensile", group: "drop", defaultSelected: false },
+  dropTensile: { label: "Drop Compressive", group: "drop", defaultSelected: false },
   rectRank: { label: "Rect Rank", group: "rect", defaultSelected: true },
   rectTensile: { label: "Rect Tensile", group: "rect", defaultSelected: false },
   rectLoad: { label: "Rect Load", group: "rect", defaultSelected: false },
@@ -530,6 +530,9 @@ function buildAxisSelectors() {
   }
   
   let defaultYAxis = "Max Tensile (MPa)";
+  if (currentTest === "Drop") {
+    defaultYAxis = "Max Compressive (MPa)";
+  }
   if (!yAxisCols.includes(defaultYAxis)) {
     defaultYAxis = yAxisCols[0];
   }
@@ -543,37 +546,43 @@ function buildAxisSelectors() {
 ------------------------------------------------------------- */
 function calculateRankings() {
   const selected = getSelectedAmphorae();
+  
   if (!selected || !selected.length) return [];
   
   const completeAmphorae = selected.filter(amphora => {
     if (!amphora) return false;
     const normalizedName = normalizeAmphora(amphora);
     
-    const hasRectData = rawRows.some(r => 
-      baseTest(r.Test) === "Stack" && 
-      patternOf(r.Test) === "Rect" &&
-      normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
-      Number.isFinite(r["Max Tensile (MPa)"])
-    );
+    const hasRectData = rawRows.some(r => {
+      const match = baseTest(r.Test) === "Stack" && 
+        patternOf(r.Test) === "Rect" &&
+        normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
+        Number.isFinite(r["Max Tensile (MPa)"]);
+      return match;
+    });
     
-    const hasHexData = rawRows.some(r => 
-      baseTest(r.Test) === "Stack" && 
-      patternOf(r.Test) === "Hex" &&
-      normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
-      Number.isFinite(r["Max Tensile (MPa)"])
-    );
+    const hasHexData = rawRows.some(r => {
+      const match = baseTest(r.Test) === "Stack" && 
+        patternOf(r.Test) === "Hex" &&
+        normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
+        Number.isFinite(r["Max Tensile (MPa)"]);
+      return match;
+    });
     
-    const hasHoldData = rawRows.some(r => 
-      baseTest(r.Test) === "Hold" && 
-      normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
-      Number.isFinite(r["Max Tensile (MPa)"])
-    );
+    const hasHoldData = rawRows.some(r => {
+      const match = baseTest(r.Test) === "Hold" && 
+        normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
+        Number.isFinite(r["Max Tensile (MPa)"]);
+      return match;
+    });
     
-    const hasDropData = rawRows.some(r => 
-      baseTest(r.Test) === "Drop" && 
-      normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
-      Number.isFinite(r["Max Tensile (MPa)"])
-    );
+    // Check for drop data - look for either compressive or tensile data
+    const hasDropData = rawRows.some(r => {
+      const match = baseTest(r.Test) === "Drop" && 
+        normalizeAmphora(r[AMPH_COL(r)]) === normalizedName &&
+        (Number.isFinite(r["Max Compressive (MPa)"]) || Number.isFinite(r["Max Tensile (MPa)"]));
+      return match;
+    });
     
     return hasRectData && hasHexData && hasHoldData && hasDropData;
   });
@@ -582,199 +591,212 @@ function calculateRankings() {
     return [];
   }
   
-  const stackRows = rawRows.filter(r => baseTest(r.Test) === "Stack");
-  const rectRows = stackRows.filter(r => patternOf(r.Test) === "Rect");
-  const hexRows = stackRows.filter(r => patternOf(r.Test) === "Hex");
-  
-  const selectedRectRows = rectRows.filter(r => {
-    const ampName = r[AMPH_COL(r)];
-    if (!ampName) return false;
-    const normalizedName = normalizeAmphora(ampName);
-    return completeAmphorae.some(a => a === ampName || normalizeAmphora(a) === normalizedName);
-  });
-  
-  const selectedHexRows = hexRows.filter(r => {
-    const ampName = r[AMPH_COL(r)];
-    if (!ampName) return false;
-    const normalizedName = normalizeAmphora(ampName);
-    return completeAmphorae.some(a => a === ampName || normalizeAmphora(a) === normalizedName);
-  });
-  
-  const safeRectRows = selectedRectRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
-  const safeHexRows = selectedHexRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
-  
-  function findReferenceLoad(rows) {
-    const amphoraeClosestFoS = {};
+  try {
+    const stackRows = rawRows.filter(r => baseTest(r.Test) === "Stack");
+    const rectRows = stackRows.filter(r => patternOf(r.Test) === "Rect");
+    const hexRows = stackRows.filter(r => patternOf(r.Test) === "Hex");
     
-    rows.forEach(row => {
+    const selectedRectRows = rectRows.filter(r => {
+      const ampName = r[AMPH_COL(r)];
+      if (!ampName) return false;
+      const normalizedName = normalizeAmphora(ampName);
+      return completeAmphorae.some(a => a === ampName || normalizeAmphora(a) === normalizedName);
+    });
+    
+    const selectedHexRows = hexRows.filter(r => {
+      const ampName = r[AMPH_COL(r)];
+      if (!ampName) return false;
+      const normalizedName = normalizeAmphora(ampName);
+      return completeAmphorae.some(a => a === ampName || normalizeAmphora(a) === normalizedName);
+    });
+    
+    const safeRectRows = selectedRectRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
+    const safeHexRows = selectedHexRows.filter(r => (r["Factor of Safety"] || 0) >= 1);
+    
+    function findReferenceLoad(rows) {
+      const amphoraeClosestFoS = {};
+      
+      rows.forEach(row => {
+        const amp = normalizeAmphora(row[AMPH_COL(row)]);
+        const fos = row["Factor of Safety"] || 0;
+        const load = row["Load (N)"] || 0;
+        
+        if (fos <= 0 || load <= 0) return;
+        
+        const diffFromFoS1 = Math.abs(fos - 1);
+        
+        if (!amphoraeClosestFoS[amp] || diffFromFoS1 < amphoraeClosestFoS[amp].diffFromFoS1) {
+          amphoraeClosestFoS[amp] = { load, fos, diffFromFoS1 };
+        }
+      });
+      
+      let maxLoad = 0;
+      Object.values(amphoraeClosestFoS).forEach(point => {
+        if (point.load > maxLoad) {
+          maxLoad = point.load;
+        }
+      });
+      
+      return maxLoad;
+    }
+    
+    let refRectLoad = findReferenceLoad(safeRectRows);
+    let refHexLoad = findReferenceLoad(safeHexRows);
+    
+    if (refRectLoad === 0) {
+      refRectLoad = Math.max(...selectedRectRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
+    }
+    
+    if (refHexLoad === 0) {
+      refHexLoad = Math.max(...selectedHexRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
+    }
+    
+    const amphoraeData = {};
+    completeAmphorae.forEach(amp => {
+      const normalizedName = normalizeAmphora(amp);
+      amphoraeData[normalizedName] = {
+        name: amp,
+        rectLoad: 0,
+        rectFoS: 0,
+        rectTensile: 0,
+        hexLoad: 0,
+        hexFoS: 0,
+        hexTensile: 0,
+        holdTensileValues: [],
+        holdTensile: 0,
+        dropCompressiveValues: [],
+        dropCompressive: 0,
+        volume: 0,
+        rectRank: 0,
+        hexRank: 0,
+        holdRank: 0,
+        dropRank: 0,
+        overallScore: 0,
+        overallRank: 0
+      };
+    });
+    
+    function findClosestToRef(rows, refLoad, ampName) {
+      let closestRow = null;
+      let minDiff = Infinity;
+      
+      rows.forEach(row => {
+        const amp = normalizeAmphora(row[AMPH_COL(row)]);
+        if (amp !== ampName) return;
+        
+        const load = row["Load (N)"] || 0;
+        if (load <= 0) return;
+        
+        const diff = Math.abs(load - refLoad);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestRow = row;
+        }
+      });
+      
+      return closestRow;
+    }
+    
+    completeAmphorae.forEach(amp => {
+      const normalizedName = normalizeAmphora(amp);
+      
+      const rectRow = findClosestToRef(rectRows, refRectLoad, normalizedName);
+      if (rectRow) {
+        amphoraeData[normalizedName].rectLoad = rectRow["Load (N)"] || 0;
+        amphoraeData[normalizedName].rectFoS = rectRow["Factor of Safety"] || 0;
+        amphoraeData[normalizedName].rectTensile = rectRow["Max Tensile (MPa)"] || 0;
+        amphoraeData[normalizedName].volume = (rectRow["Internal Volume (mm^3)"] || 0) / 1e6;
+      }
+      
+      const hexRow = findClosestToRef(hexRows, refHexLoad, normalizedName);
+      if (hexRow) {
+        amphoraeData[normalizedName].hexLoad = hexRow["Load (N)"] || 0;
+        amphoraeData[normalizedName].hexFoS = hexRow["Factor of Safety"] || 0;
+        amphoraeData[normalizedName].hexTensile = hexRow["Max Tensile (MPa)"] || 0;
+      }
+    });
+    
+    const holdRows = rawRows.filter(r => baseTest(r.Test) === "Hold");
+    holdRows.forEach(row => {
       const amp = normalizeAmphora(row[AMPH_COL(row)]);
-      const fos = row["Factor of Safety"] || 0;
-      const load = row["Load (N)"] || 0;
+      if (!amphoraeData[amp]) return;
       
-      if (fos <= 0 || load <= 0) return;
+      const tensile = row["Max Tensile (MPa)"] || 0;
+      if (tensile <= 0) return;
       
-      const diffFromFoS1 = Math.abs(fos - 1);
-      
-      if (!amphoraeClosestFoS[amp] || diffFromFoS1 < amphoraeClosestFoS[amp].diffFromFoS1) {
-        amphoraeClosestFoS[amp] = { load, fos, diffFromFoS1 };
+      amphoraeData[amp].holdTensileValues.push(tensile);
+    });
+    
+    Object.values(amphoraeData).forEach(amp => {
+      if (amp.holdTensileValues.length > 0) {
+        const sum = amp.holdTensileValues.reduce((a, b) => a + b, 0);
+        amp.holdTensile = sum / amp.holdTensileValues.length;
       }
     });
     
-    let maxLoad = 0;
-    Object.values(amphoraeClosestFoS).forEach(point => {
-      if (point.load > maxLoad) {
-        maxLoad = point.load;
-      }
-    });
-    
-    return maxLoad;
-  }
-  
-  let refRectLoad = findReferenceLoad(safeRectRows);
-  let refHexLoad = findReferenceLoad(safeHexRows);
-  
-  if (refRectLoad === 0) {
-    refRectLoad = Math.max(...selectedRectRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
-  }
-  
-  if (refHexLoad === 0) {
-    refHexLoad = Math.max(...selectedHexRows.map(r => r["Load (N)"] || 0).filter(v => v > 0), 0);
-  }
-  
-  const amphoraeData = {};
-  completeAmphorae.forEach(amp => {
-    const normalizedName = normalizeAmphora(amp);
-    amphoraeData[normalizedName] = {
-      name: amp,
-      rectLoad: 0,
-      rectFoS: 0,
-      rectTensile: 0,
-      hexLoad: 0,
-      hexFoS: 0,
-      hexTensile: 0,
-      holdTensileValues: [],
-      holdTensile: 0,
-      dropTensileValues: [],
-      dropTensile: 0,
-      volume: 0,
-      rectRank: 0,
-      hexRank: 0,
-      holdRank: 0,
-      dropRank: 0,
-      overallScore: 0,
-      overallRank: 0
-    };
-  });
-  
-  function findClosestToRef(rows, refLoad, ampName) {
-    let closestRow = null;
-    let minDiff = Infinity;
-    
-    rows.forEach(row => {
+    // Process drop data - calculate mean compressive stress (or tensile if compressive not available)
+    const dropRows = rawRows.filter(r => baseTest(r.Test) === "Drop");
+    dropRows.forEach(row => {
       const amp = normalizeAmphora(row[AMPH_COL(row)]);
-      if (amp !== ampName) return;
+      if (!amphoraeData[amp]) return;
       
-      const load = row["Load (N)"] || 0;
-      if (load <= 0) return;
+      // Prefer compressive data, fall back to tensile if compressive not available
+      const compressive = row["Max Compressive (MPa)"] || 0;
+      const tensile = row["Max Tensile (MPa)"] || 0;
+      const value = compressive > 0 ? compressive : tensile;
       
-      const diff = Math.abs(load - refLoad);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestRow = row;
+      if (value <= 0) return;
+      
+      amphoraeData[amp].dropCompressiveValues.push(value);
+    });
+    
+    // Calculate mean drop compressive for each amphora
+    Object.values(amphoraeData).forEach(amp => {
+      if (amp.dropCompressiveValues.length > 0) {
+        const sum = amp.dropCompressiveValues.reduce((a, b) => a + b, 0);
+        amp.dropCompressive = sum / amp.dropCompressiveValues.length;
       }
     });
     
-    return closestRow;
-  }
-  
-  completeAmphorae.forEach(amp => {
-    const normalizedName = normalizeAmphora(amp);
+    let results = Object.values(amphoraeData);
     
-    const rectRow = findClosestToRef(rectRows, refRectLoad, normalizedName);
-    if (rectRow) {
-      amphoraeData[normalizedName].rectLoad = rectRow["Load (N)"] || 0;
-      amphoraeData[normalizedName].rectFoS = rectRow["Factor of Safety"] || 0;
-      amphoraeData[normalizedName].rectTensile = rectRow["Max Tensile (MPa)"] || 0;
-      amphoraeData[normalizedName].volume = (rectRow["Internal Volume (mm^3)"] || 0) / 1e6;
+    results = results.filter(amp => {
+      const valid = amp.rectTensile > 0 && 
+        amp.hexTensile > 0 && 
+        amp.holdTensile > 0 && 
+        amp.dropCompressive > 0;
+      return valid;
+    });
+    
+    if (results.length === 0) {
+      return [];
     }
     
-    const hexRow = findClosestToRef(hexRows, refHexLoad, normalizedName);
-    if (hexRow) {
-      amphoraeData[normalizedName].hexLoad = hexRow["Load (N)"] || 0;
-      amphoraeData[normalizedName].hexFoS = hexRow["Factor of Safety"] || 0;
-      amphoraeData[normalizedName].hexTensile = hexRow["Max Tensile (MPa)"] || 0;
-    }
-  });
-  
-  const holdRows = rawRows.filter(r => baseTest(r.Test) === "Hold");
-  holdRows.forEach(row => {
-    const amp = normalizeAmphora(row[AMPH_COL(row)]);
-    if (!amphoraeData[amp]) return;
+    results.sort((a, b) => a.rectTensile - b.rectTensile);
+    results.forEach((amp, i) => { amp.rectRank = i + 1; });
     
-    const tensile = row["Max Tensile (MPa)"] || 0;
-    if (tensile <= 0) return;
+    results.sort((a, b) => a.hexTensile - b.hexTensile);
+    results.forEach((amp, i) => { amp.hexRank = i + 1; });
     
-    amphoraeData[amp].holdTensileValues.push(tensile);
-  });
-  
-  Object.values(amphoraeData).forEach(amp => {
-    if (amp.holdTensileValues.length > 0) {
-      const sum = amp.holdTensileValues.reduce((a, b) => a + b, 0);
-      amp.holdTensile = sum / amp.holdTensileValues.length;
-    }
-  });
-  
-  const dropRows = rawRows.filter(r => baseTest(r.Test) === "Drop");
-  dropRows.forEach(row => {
-    const amp = normalizeAmphora(row[AMPH_COL(row)]);
-    if (!amphoraeData[amp]) return;
+    results.sort((a, b) => a.holdTensile - b.holdTensile);
+    results.forEach((amp, i) => { amp.holdRank = i + 1; });
     
-    const tensile = row["Max Tensile (MPa)"] || 0;
-    if (tensile <= 0) return;
+    results.sort((a, b) => a.dropCompressive - b.dropCompressive);
+    results.forEach((amp, i) => { amp.dropRank = i + 1; });
     
-    amphoraeData[amp].dropTensileValues.push(tensile);
-  });
-  
-  Object.values(amphoraeData).forEach(amp => {
-    if (amp.dropTensileValues.length > 0) {
-      const sum = amp.dropTensileValues.reduce((a, b) => a + b, 0);
-      amp.dropTensile = sum / amp.dropTensileValues.length;
-    }
-  });
-  
-  let results = Object.values(amphoraeData);
-  
-  results = results.filter(amp => 
-    amp.rectTensile > 0 && 
-    amp.hexTensile > 0 && 
-    amp.holdTensile > 0 && 
-    amp.dropTensile > 0
-  );
-  
-  if (results.length === 0) {
+    results.forEach(amp => {
+      amp.overallScore = amp.rectRank + amp.hexRank + amp.holdRank + amp.dropRank;
+    });
+    
+    results.sort((a, b) => a.overallScore - b.overallScore);
+    results.forEach((amp, i) => { amp.overallRank = i + 1; });
+    
+    return results;
+    
+  } catch (error) {
+    console.error("Error in data processing:", error);
     return [];
   }
-  
-  results.sort((a, b) => a.rectTensile - b.rectTensile);
-  results.forEach((amp, i) => { amp.rectRank = i + 1; });
-  
-  results.sort((a, b) => a.hexTensile - b.hexTensile);
-  results.forEach((amp, i) => { amp.hexRank = i + 1; });
-  
-  results.sort((a, b) => a.holdTensile - b.holdTensile);
-  results.forEach((amp, i) => { amp.holdRank = i + 1; });
-  
-  results.sort((a, b) => a.dropTensile - b.dropTensile);
-  results.forEach((amp, i) => { amp.dropRank = i + 1; });
-  
-  results.forEach(amp => {
-    amp.overallScore = amp.rectRank + amp.hexRank + amp.holdRank + amp.dropRank;
-  });
-  
-  results.sort((a, b) => a.overallScore - b.overallScore);
-  results.forEach((amp, i) => { amp.overallRank = i + 1; });
-  
-  return results;
 }
 
 function displayRankingTable() {
@@ -873,7 +895,7 @@ function displayRankingTable() {
   if (selectedColumns.has("holdRank")) html += `<th>Rank</th>`;
   if (selectedColumns.has("holdTensile")) html += `<th>Tensile (MPa)</th>`;
   if (selectedColumns.has("dropRank")) html += `<th>Rank</th>`;
-  if (selectedColumns.has("dropTensile")) html += `<th>Tensile (MPa)</th>`;
+  if (selectedColumns.has("dropTensile")) html += `<th>Compressive (MPa)</th>`;
   if (selectedColumns.has("rectRank")) html += `<th>Rank</th>`;
   if (selectedColumns.has("rectTensile")) html += `<th>Tensile (MPa)</th>`;
   if (selectedColumns.has("rectLoad")) html += `<th>Load (N)</th>`;
@@ -894,7 +916,7 @@ function displayRankingTable() {
     if (selectedColumns.has("holdRank")) html += `<td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>`;
     if (selectedColumns.has("holdTensile")) html += `<td>${safeFormat(amp.holdTensile)} MPa</td>`;
     if (selectedColumns.has("dropRank")) html += `<td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>`;
-    if (selectedColumns.has("dropTensile")) html += `<td>${safeFormat(amp.dropTensile)} MPa</td>`;
+    if (selectedColumns.has("dropTensile")) html += `<td>${safeFormat(amp.dropCompressive)} MPa</td>`;
     if (selectedColumns.has("rectRank")) html += `<td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>`;
     if (selectedColumns.has("rectTensile")) html += `<td>${safeFormat(amp.rectTensile)} MPa</td>`;
     if (selectedColumns.has("rectLoad")) html += `<td>${safeFormat(amp.rectLoad)} N</td>`;
@@ -936,7 +958,7 @@ function populateAmphoraeList() {
           holdAmphorae.add(amphora);
         }
       } else if (baseTestType === "Drop") {
-        if (Number.isFinite(row["Max Tensile (MPa)"]) && Number.isFinite(row["Height (m)"])) {
+        if ((Number.isFinite(row["Max Compressive (MPa)"]) || Number.isFinite(row["Max Tensile (MPa)"])) && Number.isFinite(row["Height (m)"])) {
           dropAmphorae.add(amphora);
         }
       }
