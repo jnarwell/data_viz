@@ -76,6 +76,24 @@ html, body {
   background-color: #dee2e6;
 }
 
+/* Download button styles */
+.card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.dropdown-menu {
+  min-width: 180px;
+}
+
+.download-option {
+  cursor: pointer;
+}
+
+.download-option:hover {
+  background-color: #f8f9fa;
+}
+
 /* keep Bootstrap break-points — stack on phones */
 @media (max-width: 991.98px) {
   #sidebar {

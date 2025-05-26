@@ -1934,7 +1934,453 @@ class ModelViewer {
 }
 
 /* -------------------------------------------------------------
-   10.  Initialization
+   10.  Download Functionality
+------------------------------------------------------------- */
+class DownloadManager {
+  constructor() {
+    this.attachListeners();
+  }
+  
+  attachListeners() {
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('.download-option')) {
+        e.preventDefault();
+        const format = e.target.dataset.format;
+        this.download(format);
+      }
+    });
+  }
+  
+  download(format) {
+    const test = getTest();
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const baseFilename = `amphorae-${test.toLowerCase()}-${timestamp}`;
+    
+    if (test === 'Ranking') {
+      this.downloadRanking(format, baseFilename);
+    } else {
+      this.downloadChart(format, baseFilename);
+    }
+  }
+  
+  downloadChart(format, filename) {
+    switch (format) {
+      case 'png':
+        this.downloadChartAsPNG(filename);
+        break;
+      case 'pdf':
+        this.downloadChartAsPDF(filename);
+        break;
+      case 'xlsx':
+        this.downloadChartAsExcel(filename);
+        break;
+      case 'csv':
+        this.downloadChartAsCSV(filename);
+        break;
+      case 'txt':
+        this.downloadChartAsText(filename);
+        break;
+    }
+  }
+  
+  downloadRanking(format, filename) {
+    switch (format) {
+      case 'png':
+        this.downloadRankingAsPNG(filename);
+        break;
+      case 'pdf':
+        this.downloadRankingAsPDF(filename);
+        break;
+      case 'xlsx':
+        this.downloadRankingAsExcel(filename);
+        break;
+      case 'csv':
+        this.downloadRankingAsCSV(filename);
+        break;
+      case 'txt':
+        this.downloadRankingAsText(filename);
+        break;
+    }
+  }
+  
+  // Chart download methods
+  downloadChartAsPNG(filename) {
+    const canvas = document.getElementById('chartCanvas');
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filename}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+  
+  downloadChartAsPDF(filename) {
+    const canvas = document.getElementById('chartCanvas');
+    const imgData = canvas.toDataURL('image/png');
+    
+    // Create PDF with landscape orientation for better chart display
+    const pdf = new jspdf.jsPDF('landscape', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text(`Amphorae ${getTest()} Test Results`, pdfWidth / 2, 15, { align: 'center' });
+    
+    // Add metadata
+    pdf.setFontSize(10);
+    pdf.text(`Generated: ${new Date().toLocaleString()}`, 10, 25);
+    pdf.text(`X-Axis: ${getXAxis()}`, 10, 30);
+    pdf.text(`Y-Axis: ${getYAxis()}`, 10, 35);
+    
+    // Add chart
+    const imgWidth = pdfWidth - 20;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const yPos = 45;
+    
+    pdf.addImage(imgData, 'PNG', 10, yPos, imgWidth, Math.min(imgHeight, pdfHeight - yPos - 10));
+    pdf.save(`${filename}.pdf`);
+  }
+  
+  getChartData() {
+    const xAxis = getXAxis();
+    const yAxis = getYAxis();
+    const test = getTest();
+    const selected = getSelectedAmphorae();
+    const patternFilter = test === "Stack" ? getPattern() : "all";
+    
+    const data = [];
+    
+    selected.forEach(amp => {
+      const rows = rawRows.filter(r =>
+        r[AMPH_COL(r)] === amp &&
+        baseTest(r.Test) === test &&
+        (patternFilter === "all" || patternOf(r.Test) === patternFilter)
+      );
+      
+      rows.forEach(row => {
+        const x = effectiveX(row, xAxis);
+        const y = effectiveY(row, yAxis);
+        
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          data.push({
+            Amphora: amp,
+            [xAxis]: x,
+            [yAxis]: y,
+            Test: row.Test,
+            Pattern: patternOf(row.Test)
+          });
+        }
+      });
+    });
+    
+    return data;
+  }
+  
+  downloadChartAsExcel(filename) {
+    const data = this.getChartData();
+    
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Add data sheet
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, 'Chart Data');
+    
+    // Add metadata sheet
+    const metadata = [
+      { Property: 'Test Type', Value: getTest() },
+      { Property: 'X-Axis', Value: getXAxis() },
+      { Property: 'Y-Axis', Value: getYAxis() },
+      { Property: 'Pattern Filter', Value: getPattern() },
+      { Property: 'Generated', Value: new Date().toLocaleString() },
+      { Property: 'Selected Amphorae', Value: getSelectedAmphorae().join(', ') }
+    ];
+    const metaSheet = XLSX.utils.json_to_sheet(metadata);
+    XLSX.utils.book_append_sheet(wb, metaSheet, 'Metadata');
+    
+    // Save file
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  }
+  
+  downloadChartAsCSV(filename) {
+    const data = this.getChartData();
+    const csv = Papa.unparse(data);
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  
+  downloadChartAsText(filename) {
+    const data = this.getChartData();
+    const xAxis = getXAxis();
+    const yAxis = getYAxis();
+    
+    let text = `Amphorae ${getTest()} Test Results\n`;
+    text += `Generated: ${new Date().toLocaleString()}\n`;
+    text += `X-Axis: ${xAxis}\n`;
+    text += `Y-Axis: ${yAxis}\n`;
+    text += `Pattern Filter: ${getPattern()}\n`;
+    text += `\n${'='.repeat(80)}\n\n`;
+    
+    // Group by amphora
+    const byAmphora = {};
+    data.forEach(row => {
+      if (!byAmphora[row.Amphora]) byAmphora[row.Amphora] = [];
+      byAmphora[row.Amphora].push(row);
+    });
+    
+    Object.entries(byAmphora).forEach(([amp, rows]) => {
+      text += `${amp}\n${'-'.repeat(amp.length)}\n`;
+      rows.forEach(row => {
+        text += `  ${xAxis}: ${row[xAxis].toFixed(2)}, ${yAxis}: ${row[yAxis].toFixed(2)}`;
+        if (row.Pattern !== 'unknown') text += ` (${row.Pattern})`;
+        text += '\n';
+      });
+      text += '\n';
+    });
+    
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  
+  // Ranking download methods
+  downloadRankingAsPNG(filename) {
+    const rankingTable = document.getElementById('rankingTable');
+    
+    html2canvas(rankingTable, {
+      backgroundColor: '#ffffff',
+      scale: 2 // Higher quality
+    }).then(canvas => {
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    });
+  }
+  
+  downloadRankingAsPDF(filename) {
+    const rankings = calculateRankings();
+    const pdf = new jspdf.jsPDF('portrait', 'mm', 'a4');
+    
+    // Add title
+    pdf.setFontSize(16);
+    pdf.text('Amphorae Ranking Report', 105, 15, { align: 'center' });
+    
+    // Add metadata
+    pdf.setFontSize(10);
+    pdf.text(`Generated: ${new Date().toLocaleString()}`, 10, 25);
+    pdf.text(`Number of Amphorae: ${rankings.length}`, 10, 30);
+    
+    // Create table
+    const tableData = rankings.map(amp => {
+      const row = [amp.name, amp.overallRank];
+      
+      if (selectedColumns.has('holdRank')) row.push(amp.holdRank);
+      if (selectedColumns.has('holdTensile')) row.push(amp.holdTensile.toFixed(2));
+      if (selectedColumns.has('dropRank')) row.push(amp.dropRank);
+      if (selectedColumns.has('dropTensile')) row.push(amp.dropCompressive.toFixed(2));
+      if (selectedColumns.has('rectRank')) row.push(amp.rectRank);
+      if (selectedColumns.has('rectTensile')) row.push(amp.rectTensile.toFixed(2));
+      if (selectedColumns.has('hexRank')) row.push(amp.hexRank);
+      if (selectedColumns.has('hexTensile')) row.push(amp.hexTensile.toFixed(2));
+      
+      return row;
+    });
+    
+    const headers = ['Amphora'];
+    if (selectedColumns.has('overallRank')) headers.push('Overall Rank');
+    if (selectedColumns.has('holdRank')) headers.push('Hold Rank');
+    if (selectedColumns.has('holdTensile')) headers.push('Hold Tensile');
+    if (selectedColumns.has('dropRank')) headers.push('Drop Rank');
+    if (selectedColumns.has('dropTensile')) headers.push('Drop Comp.');
+    if (selectedColumns.has('rectRank')) headers.push('Rect Rank');
+    if (selectedColumns.has('rectTensile')) headers.push('Rect Tensile');
+    if (selectedColumns.has('hexRank')) headers.push('Hex Rank');
+    if (selectedColumns.has('hexTensile')) headers.push('Hex Tensile');
+    
+    // Use autoTable if available, otherwise create simple table
+    let yPos = 40;
+    const cellWidth = 190 / headers.length;
+    
+    // Headers
+    pdf.setFontSize(9);
+    pdf.setFont(undefined, 'bold');
+    headers.forEach((header, i) => {
+      pdf.text(header, 10 + i * cellWidth, yPos);
+    });
+    
+    // Data
+    pdf.setFont(undefined, 'normal');
+    pdf.setFontSize(8);
+    tableData.forEach((row, rowIndex) => {
+      yPos += 6;
+      if (yPos > 280) {
+        pdf.addPage();
+        yPos = 20;
+      }
+      
+      row.forEach((cell, i) => {
+        pdf.text(String(cell), 10 + i * cellWidth, yPos);
+      });
+    });
+    
+    pdf.save(`${filename}.pdf`);
+  }
+  
+  downloadRankingAsExcel(filename) {
+    const rankings = calculateRankings();
+    const wb = XLSX.utils.book_new();
+    
+    // Prepare data for selected columns
+    const data = rankings.map(amp => {
+      const row = { Amphora: amp.name };
+      
+      if (selectedColumns.has('overallRank')) row['Overall Rank'] = amp.overallRank;
+      if (selectedColumns.has('holdRank')) row['Hold Rank'] = amp.holdRank;
+      if (selectedColumns.has('holdTensile')) row['Hold Tensile (MPa)'] = amp.holdTensile;
+      if (selectedColumns.has('dropRank')) row['Drop Rank'] = amp.dropRank;
+      if (selectedColumns.has('dropTensile')) row['Drop Compressive (MPa)'] = amp.dropCompressive;
+      if (selectedColumns.has('rectRank')) row['Rect Rank'] = amp.rectRank;
+      if (selectedColumns.has('rectTensile')) row['Rect Tensile (MPa)'] = amp.rectTensile;
+      if (selectedColumns.has('rectLoad')) row['Rect Load (N)'] = amp.rectLoad;
+      if (selectedColumns.has('rectFoS')) row['Rect FoS'] = amp.rectFoS;
+      if (selectedColumns.has('hexRank')) row['Hex Rank'] = amp.hexRank;
+      if (selectedColumns.has('hexTensile')) row['Hex Tensile (MPa)'] = amp.hexTensile;
+      if (selectedColumns.has('hexLoad')) row['Hex Load (N)'] = amp.hexLoad;
+      if (selectedColumns.has('hexFoS')) row['Hex FoS'] = amp.hexFoS;
+      
+      return row;
+    });
+    
+    // Add ranking sheet
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, 'Rankings');
+    
+    // Add summary sheet
+    const summary = [
+      { Metric: 'Total Amphorae', Value: rankings.length },
+      { Metric: 'Generated', Value: new Date().toLocaleString() },
+      { Metric: 'Best Overall', Value: rankings[0]?.name || '-' },
+      { Metric: 'Selected Columns', Value: Array.from(selectedColumns).join(', ') }
+    ];
+    const summarySheet = XLSX.utils.json_to_sheet(summary);
+    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+    
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  }
+  
+  downloadRankingAsCSV(filename) {
+    const rankings = calculateRankings();
+    
+    // Prepare data for selected columns
+    const data = rankings.map(amp => {
+      const row = { Amphora: amp.name };
+      
+      if (selectedColumns.has('overallRank')) row['Overall Rank'] = amp.overallRank;
+      if (selectedColumns.has('holdRank')) row['Hold Rank'] = amp.holdRank;
+      if (selectedColumns.has('holdTensile')) row['Hold Tensile (MPa)'] = amp.holdTensile;
+      if (selectedColumns.has('dropRank')) row['Drop Rank'] = amp.dropRank;
+      if (selectedColumns.has('dropTensile')) row['Drop Compressive (MPa)'] = amp.dropCompressive;
+      if (selectedColumns.has('rectRank')) row['Rect Rank'] = amp.rectRank;
+      if (selectedColumns.has('rectTensile')) row['Rect Tensile (MPa)'] = amp.rectTensile;
+      if (selectedColumns.has('rectLoad')) row['Rect Load (N)'] = amp.rectLoad;
+      if (selectedColumns.has('rectFoS')) row['Rect FoS'] = amp.rectFoS;
+      if (selectedColumns.has('hexRank')) row['Hex Rank'] = amp.hexRank;
+      if (selectedColumns.has('hexTensile')) row['Hex Tensile (MPa)'] = amp.hexTensile;
+      if (selectedColumns.has('hexLoad')) row['Hex Load (N)'] = amp.hexLoad;
+      if (selectedColumns.has('hexFoS')) row['Hex FoS'] = amp.hexFoS;
+      
+      return row;
+    });
+    
+    const csv = Papa.unparse(data);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  
+  downloadRankingAsText(filename) {
+    const rankings = calculateRankings();
+    
+    let text = `Amphorae Ranking Report\n`;
+    text += `${'='.repeat(80)}\n`;
+    text += `Generated: ${new Date().toLocaleString()}\n`;
+    text += `Total Amphorae: ${rankings.length}\n`;
+    text += `\n${'='.repeat(80)}\n\n`;
+    
+    rankings.forEach(amp => {
+      text += `${amp.name}\n${'-'.repeat(amp.name.length)}\n`;
+      text += `  Overall Rank: #${amp.overallRank}\n`;
+      
+      if (selectedColumns.has('holdRank') || selectedColumns.has('holdTensile')) {
+        text += `  Hold Test: `;
+        if (selectedColumns.has('holdRank')) text += `Rank #${amp.holdRank}`;
+        if (selectedColumns.has('holdTensile')) text += ` (${amp.holdTensile.toFixed(2)} MPa)`;
+        text += '\n';
+      }
+      
+      if (selectedColumns.has('dropRank') || selectedColumns.has('dropTensile')) {
+        text += `  Drop Test: `;
+        if (selectedColumns.has('dropRank')) text += `Rank #${amp.dropRank}`;
+        if (selectedColumns.has('dropTensile')) text += ` (${amp.dropCompressive.toFixed(2)} MPa)`;
+        text += '\n';
+      }
+      
+      if (selectedColumns.has('rectRank') || selectedColumns.has('rectTensile')) {
+        text += `  Rect Stack: `;
+        if (selectedColumns.has('rectRank')) text += `Rank #${amp.rectRank}`;
+        if (selectedColumns.has('rectTensile')) text += ` (${amp.rectTensile.toFixed(2)} MPa)`;
+        if (selectedColumns.has('rectLoad')) text += ` Load: ${amp.rectLoad.toFixed(2)} N`;
+        if (selectedColumns.has('rectFoS')) text += ` FoS: ${amp.rectFoS.toFixed(2)}`;
+        text += '\n';
+      }
+      
+      if (selectedColumns.has('hexRank') || selectedColumns.has('hexTensile')) {
+        text += `  Hex Stack: `;
+        if (selectedColumns.has('hexRank')) text += `Rank #${amp.hexRank}`;
+        if (selectedColumns.has('hexTensile')) text += ` (${amp.hexTensile.toFixed(2)} MPa)`;
+        if (selectedColumns.has('hexLoad')) text += ` Load: ${amp.hexLoad.toFixed(2)} N`;
+        if (selectedColumns.has('hexFoS')) text += ` FoS: ${amp.hexFoS.toFixed(2)}`;
+        text += '\n';
+      }
+      
+      text += '\n';
+    });
+    
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+
+/* -------------------------------------------------------------
+   11.  Initialization
 ------------------------------------------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   const chartBody = document.querySelector("#chart-wrap .card-body");
@@ -2001,6 +2447,9 @@ document.addEventListener("DOMContentLoaded", () => {
   } else {
     console.warn('Three.js not loaded - 3D model preview disabled');
   }
+  
+  // Initialize download manager
+  const downloadManager = new DownloadManager();
   
   attachListeners();
   onControlChange();
