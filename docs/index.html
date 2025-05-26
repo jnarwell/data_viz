@@ -13,6 +13,11 @@
     <!-- Chart.js + PapaParse -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    
+    <!-- Three.js for 3D models -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
 
     <!-- Custom styles -->
     <link rel="stylesheet" href="style.css" />
@@ -233,6 +238,41 @@
       <!-- /app-row -->
     </div>
     <!-- /#app-root -->
+
+    <!-- 3D Model Popup -->
+    <div id="model-popup" class="model-popup">
+      <div class="model-popup-content">
+        <div id="model-container" class="model-container"></div>
+        <div class="model-info-panel">
+          <h5 id="model-amphora-name"></h5>
+          <div class="model-info-item">
+            <strong>Weight (Empty):</strong>
+            <span id="model-weight-empty">-</span>
+          </div>
+          <div class="model-info-item">
+            <strong>Weight (Wine):</strong>
+            <span id="model-weight-wine">-</span>
+          </div>
+          <div class="model-info-item">
+            <strong>Weight (Oil):</strong>
+            <span id="model-weight-oil">-</span>
+          </div>
+          <div class="model-info-item">
+            <strong>Internal Volume:</strong>
+            <span id="model-volume">-</span>
+          </div>
+          <div class="model-loading" id="model-loading">
+            <div class="spinner-border spinner-border-sm text-secondary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>Loading 3D model...</span>
+          </div>
+          <div class="model-error" id="model-error" style="display: none;">
+            3D model not available
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script src="script.js"></script>
     <script

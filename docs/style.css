@@ -62,6 +62,20 @@ html, body {
   border-color: var(--bs-success);
 }
 
+/* Sortable table headers */
+#rankingTable th[onclick] {
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+#rankingTable th[onclick]:hover {
+  background-color: #e9ecef;
+}
+
+#rankingTable th[onclick]:active {
+  background-color: #dee2e6;
+}
+
 /* keep Bootstrap break-points — stack on phones */
 @media (max-width: 991.98px) {
   #sidebar {
@@ -73,6 +87,129 @@ html, body {
     flex-shrink: 0;
   }
   #chart-wrap { flex: 1 1 auto; }
+}
+
+/* 3D Model Popup Styles */
+.model-popup {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;  /* Very high z-index to ensure it's always on top */
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.model-popup.show {
+  opacity: 1;
+  pointer-events: none; /* Keep it non-interactive even when visible */
+}
+
+.model-popup.show .model-popup-content {
+  animation: popupScale 0.3s ease-out;
+}
+
+@keyframes popupScale {
+  from {
+    transform: scale(0.95);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.model-popup-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  overflow: hidden;
+  pointer-events: none; /* Prevent interference with hover */
+  border: 1px solid rgba(0, 0, 0, 0.1); /* Subtle border for better definition */
+}
+
+.model-container {
+  width: 300px;
+  height: 300px;
+  position: relative;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.model-info-panel {
+  padding: 20px;
+  width: 250px;
+  background: #ffffff;
+  border-left: 1px solid #dee2e6;
+  position: relative;
+  min-height: 300px;
+}
+
+.model-info-panel h5 {
+  margin-bottom: 15px;
+  color: #333;
+  font-weight: 600;
+}
+
+.model-info-item {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.model-info-item strong {
+  color: #666;
+  display: inline-block;
+  margin-bottom: 2px;
+}
+
+.model-info-item span {
+  display: block;
+  color: #333;
+  padding-left: 10px;
+}
+
+.model-loading {
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.model-error {
+  color: #dc3545;
+  font-size: 13px;
+  padding: 10px;
+  background: #f8d7da;
+  border-radius: 4px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+#chart-wrap .card {
+  position: relative;
+  z-index: 1;
+}
+
+#chart-wrap .card-body {
+  position: relative;
+  overflow: visible;
+}
+
+/* Hover effect for amphora names in table */
+#rankingTable tbody td:first-of-type,
+#rankingTable tbody td:nth-child(2) {
+  transition: color 0.2s;
+}
+
+#rankingTable tbody td:first-of-type:hover,
+#rankingTable tbody td:nth-child(2):hover {
+  color: var(--bs-primary);
+  text-decoration: underline;
 }
 
 @media (min-width: 992px) {   /* lg and up */

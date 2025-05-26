@@ -41,6 +41,13 @@ const RANKING_COLUMNS = {
 
 let selectedColumns = new Set();
 
+// Sorting state for ranking table
+let currentSortColumn = 'overallRank';
+let currentSortDirection = 'asc'; // 'asc' or 'desc'
+
+// 3D Model System
+let modelViewer = null;
+
 /* -------------------------------------------------------------
    2.  Utilities
 ------------------------------------------------------------- */
@@ -67,14 +74,17 @@ const patternOf = (testStr) => {
 
 const normalizeAmphora = (name) => {
   if (name === null || name === undefined) return "";
-  return String(name).replace(/_(rect|hex)$/, "");
+  // Remove both _rect and _hex suffixes
+  return String(name).replace(/[_\s]+(rect|hex)$/i, "").trim();
 };
 
 const AMPH_COL = (row) => {
   if (!row) return "";
   if (row.hasOwnProperty("Amphora")) return "Amphora";
   if (row.hasOwnProperty("Amphorae")) return "Amphorae";
-  return Object.keys(row).find((k) => k.toLowerCase().startsWith("amphora")) || "";
+  const keys = Object.keys(row);
+  const amphoraKey = keys.find((k) => k && k.toLowerCase().startsWith("amphora"));
+  return amphoraKey || "";
 };
 
 const getUnit = (label) => {
@@ -166,6 +176,11 @@ function buildColumnControls() {
         selectedColumns.add(key);
       } else {
         selectedColumns.delete(key);
+        // If we're deselecting the current sort column, reset to overall rank
+        if (currentSortColumn === key) {
+          currentSortColumn = 'overallRank';
+          currentSortDirection = 'asc';
+        }
       }
       updateColumnControlButtons();
       displayRankingTable();
@@ -196,6 +211,11 @@ function attachColumnControlListeners() {
         this.classList.remove("active");
         testTypeColumns[testType].forEach(col => {
           selectedColumns.delete(col);
+          // If we're deselecting the current sort column, reset to overall rank
+          if (currentSortColumn === col) {
+            currentSortColumn = 'overallRank';
+            currentSortDirection = 'asc';
+          }
         });
       } else {
         // Activate this button and add its columns
@@ -227,6 +247,9 @@ function attachColumnControlListeners() {
   document.getElementById("deselectAllColumns")?.addEventListener("click", function() {
     selectedColumns.clear();
     selectedColumns.add("overallRank"); // Always keep overall rank
+    // Reset sort to overall rank
+    currentSortColumn = 'overallRank';
+    currentSortDirection = 'asc';
     updateColumnControlButtons();
     displayRankingTable();
   });
@@ -822,11 +845,107 @@ function displayRankingTable() {
     return;
   }
   
+  // Apply current sort
+  const sortedRankings = [...rankings].sort((a, b) => {
+    let aVal, bVal;
+    
+    // Get values based on column type
+    switch(currentSortColumn) {
+      case 'name':
+        aVal = a.name || '';
+        bVal = b.name || '';
+        break;
+      case 'overallRank':
+        aVal = a.overallRank || 999;
+        bVal = b.overallRank || 999;
+        break;
+      case 'holdRank':
+        aVal = a.holdRank || 999;
+        bVal = b.holdRank || 999;
+        break;
+      case 'holdTensile':
+        aVal = a.holdTensile || 0;
+        bVal = b.holdTensile || 0;
+        break;
+      case 'dropRank':
+        aVal = a.dropRank || 999;
+        bVal = b.dropRank || 999;
+        break;
+      case 'dropTensile':
+        aVal = a.dropCompressive || 0;
+        bVal = b.dropCompressive || 0;
+        break;
+      case 'rectRank':
+        aVal = a.rectRank || 999;
+        bVal = b.rectRank || 999;
+        break;
+      case 'rectTensile':
+        aVal = a.rectTensile || 0;
+        bVal = b.rectTensile || 0;
+        break;
+      case 'rectLoad':
+        aVal = a.rectLoad || 0;
+        bVal = b.rectLoad || 0;
+        break;
+      case 'rectFoS':
+        aVal = a.rectFoS || 0;
+        bVal = b.rectFoS || 0;
+        break;
+      case 'hexRank':
+        aVal = a.hexRank || 999;
+        bVal = b.hexRank || 999;
+        break;
+      case 'hexTensile':
+        aVal = a.hexTensile || 0;
+        bVal = b.hexTensile || 0;
+        break;
+      case 'hexLoad':
+        aVal = a.hexLoad || 0;
+        bVal = b.hexLoad || 0;
+        break;
+      case 'hexFoS':
+        aVal = a.hexFoS || 0;
+        bVal = b.hexFoS || 0;
+        break;
+      default:
+        aVal = 0;
+        bVal = 0;
+    }
+    
+    // Compare values
+    if (typeof aVal === 'string' && typeof bVal === 'string') {
+      return currentSortDirection === 'asc' 
+        ? aVal.localeCompare(bVal)
+        : bVal.localeCompare(aVal);
+    } else {
+      return currentSortDirection === 'asc'
+        ? aVal - bVal
+        : bVal - aVal;
+    }
+  });
+  
   const safeFormat = (value) => {
     if (value === undefined || value === null || isNaN(value) || value === 0) {
       return "–";
     }
     return Number(value).toFixed(2);
+  };
+  
+  // Helper function to create sortable header
+  const createSortableHeader = (columnKey, label, rowspan = false) => {
+    const isCurrentSort = currentSortColumn === columnKey;
+    const arrow = isCurrentSort 
+      ? (currentSortDirection === 'asc' ? ' ↑' : ' ↓')
+      : '';
+    const style = 'cursor: pointer; user-select: none;';
+    const onclick = `onclick="sortRankingTable('${columnKey}')"`;
+    const title = 'title="Click to sort by this column"';
+    
+    if (rowspan) {
+      return `<th rowspan="2" style="${style}" ${onclick} ${title}>${label}${arrow}</th>`;
+    } else {
+      return `<th style="${style}" ${onclick} ${title}>${label}${arrow}</th>`;
+    }
   };
   
   let html = '';
@@ -841,16 +960,16 @@ function displayRankingTable() {
       </div>
     `;
   }
-  
+    
   // Build table headers based on selected columns
   html += `<table class="table table-striped table-hover"><thead>`;
   
   // First header row
   html += `<tr>`;
   if (selectedColumns.has("overallRank")) {
-    html += `<th rowspan="2">Overall<br>Rank</th>`;
+    html += createSortableHeader('overallRank', 'Overall<br>Rank', true);
   }
-  html += `<th rowspan="2">Amphora</th>`;
+  html += createSortableHeader('name', 'Amphora', true);
   
   // Group headers
   const hasHoldColumns = selectedColumns.has("holdRank") || selectedColumns.has("holdTensile");
@@ -892,22 +1011,22 @@ function displayRankingTable() {
   
   // Second header row
   html += `<tr>`;
-  if (selectedColumns.has("holdRank")) html += `<th>Rank</th>`;
-  if (selectedColumns.has("holdTensile")) html += `<th>Tensile (MPa)</th>`;
-  if (selectedColumns.has("dropRank")) html += `<th>Rank</th>`;
-  if (selectedColumns.has("dropTensile")) html += `<th>Compressive (MPa)</th>`;
-  if (selectedColumns.has("rectRank")) html += `<th>Rank</th>`;
-  if (selectedColumns.has("rectTensile")) html += `<th>Tensile (MPa)</th>`;
-  if (selectedColumns.has("rectLoad")) html += `<th>Load (N)</th>`;
-  if (selectedColumns.has("rectFoS")) html += `<th>FoS</th>`;
-  if (selectedColumns.has("hexRank")) html += `<th>Rank</th>`;
-  if (selectedColumns.has("hexTensile")) html += `<th>Tensile (MPa)</th>`;
-  if (selectedColumns.has("hexLoad")) html += `<th>Load (N)</th>`;
-  if (selectedColumns.has("hexFoS")) html += `<th>FoS</th>`;
+  if (selectedColumns.has("holdRank")) html += createSortableHeader('holdRank', 'Rank');
+  if (selectedColumns.has("holdTensile")) html += createSortableHeader('holdTensile', 'Tensile (MPa)');
+  if (selectedColumns.has("dropRank")) html += createSortableHeader('dropRank', 'Rank');
+  if (selectedColumns.has("dropTensile")) html += createSortableHeader('dropTensile', 'Compressive (MPa)');
+  if (selectedColumns.has("rectRank")) html += createSortableHeader('rectRank', 'Rank');
+  if (selectedColumns.has("rectTensile")) html += createSortableHeader('rectTensile', 'Tensile (MPa)');
+  if (selectedColumns.has("rectLoad")) html += createSortableHeader('rectLoad', 'Load (N)');
+  if (selectedColumns.has("rectFoS")) html += createSortableHeader('rectFoS', 'FoS');
+  if (selectedColumns.has("hexRank")) html += createSortableHeader('hexRank', 'Rank');
+  if (selectedColumns.has("hexTensile")) html += createSortableHeader('hexTensile', 'Tensile (MPa)');
+  if (selectedColumns.has("hexLoad")) html += createSortableHeader('hexLoad', 'Load (N)');
+  if (selectedColumns.has("hexFoS")) html += createSortableHeader('hexFoS', 'FoS');
   html += `</tr></thead><tbody>`;
   
   // Table rows
-  rankings.forEach((amp) => {
+  sortedRankings.forEach((amp) => {
     html += `<tr>`;
     if (selectedColumns.has("overallRank")) {
       html += `<td><strong>${amp.overallRank || '–'}</strong></td>`;
@@ -931,7 +1050,41 @@ function displayRankingTable() {
   html += `</tbody></table>`;
   
   tableEl.innerHTML = html;
+  
+  // Add hover listeners for table amphora names
+  if (modelViewer) {
+    const tableRows = tableEl.querySelectorAll('tbody tr');
+    tableRows.forEach((row, index) => {
+      const nameCell = row.querySelector('td:nth-child(' + (selectedColumns.has("overallRank") ? '2' : '1') + ')');
+      if (nameCell) {
+        nameCell.style.cursor = 'pointer';
+        nameCell.addEventListener('mouseenter', (e) => {
+          const ampData = sortedRankings[index];
+          if (ampData) {
+            // Pass null for rowData since we'll look it up
+            modelViewer.show(ampData.name, e.clientX - 10, e.clientY, null);
+          }
+        });
+        nameCell.addEventListener('mouseleave', () => {
+          modelViewer.hide();
+        });
+      }
+    });
+  }
 }
+
+// Add global sorting function
+window.sortRankingTable = function(columnKey) {
+  if (currentSortColumn === columnKey) {
+    // Toggle direction if clicking same column
+    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    // New column - default to ascending
+    currentSortColumn = columnKey;
+    currentSortDirection = 'asc';
+  }
+  displayRankingTable();
+};
 
 function populateAmphoraeList() {
   const test = getTest();
@@ -1178,6 +1331,13 @@ function updatePlot() {
       console.error("Chart canvas not found");
       return;
     }
+    
+    // Add mouseleave listener to hide popup when leaving chart
+    chartCanvas.addEventListener('mouseleave', () => {
+      if (modelViewer) {
+        modelViewer.hide();
+      }
+    });
 
     chart = new Chart(chartCanvas, {
       type: "line",
@@ -1185,9 +1345,34 @@ function updatePlot() {
       options: {
         maintainAspectRatio: false,
         responsive: true,
+        interaction: {
+          intersect: false,
+          mode: 'point'
+        },
+        onHover: (event, activeElements) => {
+          if (activeElements.length > 0 && modelViewer) {
+            const element = activeElements[0];
+            const dataset = datasets[element.datasetIndex];
+            const dataPoint = dataset.data[element.index];
+            const amphoraName = dataset.label;
+            
+            const canvasRect = chartCanvas.getBoundingClientRect();
+            const mouseX = canvasRect.left + event.x - 10; // event.x is relative to canvas
+            const mouseY = canvasRect.top + event.y;
+            
+            modelViewer.show(amphoraName, mouseX, mouseY, dataPoint.__rawRow);
+          } else if (modelViewer) {
+            modelViewer.hide();
+          }
+        },
         plugins: {
-          legend: { position: "right" },
+          legend: { 
+            position: "right",
+            onHover: null,  // Disable hover on legend items
+            onLeave: null
+          },
           tooltip: {
+            enabled: true,
             callbacks: {
               label: (ctx) => {
                 const r = ctx.raw.__rawRow || {};
@@ -1321,6 +1506,11 @@ async function onControlChange() {
     populateAmphoraeList();
     
     if (test === "Ranking") {
+      // Reset sort to overall rank when switching to ranking view
+      if (test !== lastTestLoaded) {
+        currentSortColumn = 'overallRank';
+        currentSortDirection = 'asc';
+      }
       displayRankingTable();
     } else {
       updatePlot();
@@ -1344,7 +1534,407 @@ function attachListeners() {
 }
 
 /* -------------------------------------------------------------
-   9.  Initialization
+   9.  3D Model Viewer
+------------------------------------------------------------- */
+class ModelViewer {
+  constructor() {
+  // Check if Three.js is loaded
+  if (typeof THREE === 'undefined' || typeof THREE.STLLoader === 'undefined') {
+    console.error('Three.js or STLLoader not loaded');
+    return;
+  }
+  
+  this.scene = null;
+  this.camera = null;
+  this.renderer = null;
+  this.controls = null;
+  this.model = null;
+  this.animationId = null;
+  this.popup = document.getElementById('model-popup');
+  this.container = document.getElementById('model-container');
+  this.loader = new THREE.STLLoader();
+  this.currentAmphora = null;
+  this.hideTimeout = null;
+  this.showTimeout = null;
+  this.cursorX = undefined;
+  this.cursorY = undefined;
+  
+  this.init();
+  
+  // Track mouse position globally
+  document.addEventListener('mousemove', (e) => {
+    this.cursorX = e.clientX;
+    this.cursorY = e.clientY;
+    
+    // Update position if popup is visible and cursor might overlap
+    if (this.popup.classList.contains('show')) {
+      this._updatePosition();
+    }
+  });
+  
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    if (this.popup.classList.contains('show') && this.currentAmphora) {
+      this._updatePosition();
+    }
+  });
+}
+  
+  _updatePosition() {
+  const chartWrap = document.getElementById('chart-wrap');
+  if (!chartWrap) return;
+  
+  const rect = chartWrap.getBoundingClientRect();
+  
+  // Ensure chart wrap has dimensions
+  if (rect.width === 0 || rect.height === 0) return;
+  
+  const popupWidth = 550;
+  const popupHeight = 300;
+  const margin = 20;
+  
+  // Check if popup fits in the chart area
+  const availableWidth = rect.width - (margin * 2);
+  
+  if (availableWidth < popupWidth) {
+    // Scale down the popup if needed
+    const scale = availableWidth / popupWidth;
+    this.popup.style.transform = `scale(${scale})`;
+    this.popup.style.transformOrigin = 'top right';
+  } else {
+    this.popup.style.transform = '';
+  }
+  
+  // Default position: top-right of chart area
+  let left = rect.right - popupWidth - margin;
+  let top = rect.top + margin;
+  
+  // Check if cursor would overlap with the popup in top-right position
+  if (this.cursorX !== undefined && this.cursorY !== undefined) {
+    const popupRight = left + popupWidth;
+    const popupBottom = top + popupHeight;
+    
+    // Check if cursor is within the popup area (with a small buffer)
+    const buffer = 10;
+    const cursorInPopup = this.cursorX >= left - buffer && 
+                         this.cursorX <= popupRight + buffer &&
+                         this.cursorY >= top - buffer && 
+                         this.cursorY <= popupBottom + buffer;
+    
+    if (cursorInPopup) {
+      // Move to bottom-left corner instead
+      left = rect.left + margin;
+      top = rect.bottom - popupHeight - margin;
+      
+      // Update transform origin for bottom-left position if scaled
+      if (availableWidth < popupWidth) {
+        this.popup.style.transformOrigin = 'bottom left';
+      }
+    }
+  }
+  
+  // Ensure it stays on screen
+  if (left < margin) left = margin;
+  if (top < margin) top = margin;
+  
+  // If popup would go below viewport, adjust
+  if (top + popupHeight > window.innerHeight - margin) {
+    top = window.innerHeight - popupHeight - margin;
+  }
+  
+  this.popup.style.left = `${left}px`;
+  this.popup.style.top = `${top}px`;
+}
+  
+  init() {
+    // Scene setup
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xf5f5f5);
+    
+    // Log available models for debugging
+    console.log('3D Model Viewer initialized');
+    console.log('Popup positioning: TOP-RIGHT corner of chart area');
+    console.log('Expected model path format: ./models/[amphora_name].stl');
+    console.log('Example: "Africana 2A" -> "./models/africana_2a.stl"');
+    
+    // Camera setup
+    this.camera = new THREE.PerspectiveCamera(
+      45,
+      this.container.offsetWidth / this.container.offsetHeight,
+      0.1,
+      1000
+    );
+    this.camera.position.set(0, 0, 200);
+    
+    // Renderer setup
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.container.appendChild(this.renderer.domElement);
+    
+    // Controls setup
+    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05;
+    this.controls.enableZoom = false;
+    this.controls.enablePan = false;
+    this.controls.autoRotate = true;
+    this.controls.autoRotateSpeed = 2.0;
+    
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    this.scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(100, 100, 50);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 500;
+    directionalLight.shadow.camera.left = -100;
+    directionalLight.shadow.camera.right = 100;
+    directionalLight.shadow.camera.top = 100;
+    directionalLight.shadow.camera.bottom = -100;
+    this.scene.add(directionalLight);
+    
+    const backLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    backLight.position.set(-100, -100, -50);
+    this.scene.add(backLight);
+  }
+  
+  formatModelFileName(amphoraName) {
+    // Convert amphora name to filename format
+    // First normalize the name to remove pattern suffixes
+    let normalizedName = normalizeAmphora(amphoraName);
+    
+    // Handle specific naming corrections and mappings
+    const directMappings = {
+      // Exact mappings for known amphora types
+      'africana 2a': 'africana_2a',
+      'africana 2b': 'africana_2b',
+      'dressel 1a': 'dressel_1a',
+      'dressel 1b': 'dressel_1b',
+      'dressel 20': 'dressel_20',
+      'seagean': 'seaegean',  // Spelling correction
+      'seaegean': 'seaegean', // Already correct spelling
+      'canaanite kw214': 'canaanite_kw214',
+      'cannanite kw214': 'canaanite_kw214', // Common misspelling
+      // Add more direct mappings as needed
+    };
+    
+    // First check for direct mapping
+    const lowerName = normalizedName.toLowerCase().trim();
+    if (directMappings[lowerName]) {
+      return directMappings[lowerName] + '.stl';
+    }
+    
+    // Otherwise, convert to filename format
+    const filename = lowerName
+      .replace(/\s+/g, '_')           // Replace spaces with underscores
+      .replace(/[^\w_-]/g, '')        // Remove special characters except underscore and dash
+      .replace(/_+/g, '_')            // Replace multiple underscores with single
+      .replace(/^_|_$/g, '');         // Remove leading/trailing underscores
+    
+    return filename + '.stl';
+  }
+  
+  loadModel(amphoraName) {
+    // Clear previous model
+    if (this.model) {
+      this.scene.remove(this.model);
+      this.model.geometry?.dispose();
+      this.model.material?.dispose();
+      this.model = null;
+    }
+    
+    const fileName = this.formatModelFileName(amphoraName);
+    // Use path relative to the HTML file location
+    const modelPath = `models/${fileName}`;
+    
+    // Show loading state
+    document.getElementById('model-loading').style.display = 'block';
+    document.getElementById('model-error').style.display = 'none';
+    
+    // Try to load the model
+    this.tryLoadModel(modelPath, amphoraName, fileName);
+  }
+  
+  tryLoadModel(modelPath, amphoraName, fileName) {
+    this.loader.load(
+      modelPath,
+      (geometry) => {
+        // Success callback
+        document.getElementById('model-loading').style.display = 'none';
+        
+        // Create material
+        const material = new THREE.MeshPhongMaterial({
+          color: 0xd4a574,  // Clay/terracotta color
+          specular: 0x222222,
+          shininess: 20,
+          side: THREE.DoubleSide
+        });
+        
+        // Create mesh
+        this.model = new THREE.Mesh(geometry, material);
+        this.model.castShadow = true;
+        this.model.receiveShadow = true;
+        
+        // Center and scale the model
+        geometry.computeBoundingBox();
+        const box = geometry.boundingBox;
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // Center the geometry
+        geometry.translate(-center.x, -center.y, -center.z);
+        
+        // Scale to fit
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = 100 / maxDim;
+        this.model.scale.set(scale, scale, scale);
+        
+        // Rotate to standard orientation (STL files often need rotation)
+        this.model.rotation.x = -Math.PI / 2;
+        
+        this.scene.add(this.model);
+        
+        console.log(`Successfully loaded model: ${fileName}`);
+      },
+      (progress) => {
+        // Progress callback (optional)
+      },
+      (error) => {
+        // Error callback
+        console.error(`Error loading model for ${amphoraName}:`, error);
+        console.error(`Attempted to load: ${modelPath}`);
+        console.log(`Normalized name: ${fileName}`);
+        document.getElementById('model-loading').style.display = 'none';
+        document.getElementById('model-error').style.display = 'block';
+        document.getElementById('model-error').textContent = 
+          `3D model not available (${fileName})`;
+      }
+    );
+  }
+  
+  show(amphoraName, x, y, rowData) {
+  // Update cursor position
+  if (x !== undefined && y !== undefined) {
+    this.cursorX = x;
+    this.cursorY = y;
+  }
+  
+  // Clear any pending timeouts
+  if (this.hideTimeout) {
+    clearTimeout(this.hideTimeout);
+    this.hideTimeout = null;
+  }
+  if (this.showTimeout) {
+    clearTimeout(this.showTimeout);
+    this.showTimeout = null;
+  }
+  
+  // If already showing a different amphora, switch immediately
+  if (this.currentAmphora && this.currentAmphora !== amphoraName) {
+    this.currentAmphora = amphoraName;
+    this._displayPopup(amphoraName, rowData);
+  } else {
+    // Add small delay to prevent flickering
+    this.showTimeout = setTimeout(() => {
+      this.currentAmphora = amphoraName;
+      this._displayPopup(amphoraName, rowData);
+    }, 200); // 200ms delay to prevent flickering
+  }
+}
+  
+  _displayPopup(amphoraName, rowData) {
+    // Update info panel
+    document.getElementById('model-amphora-name').textContent = amphoraName;
+    
+    if (rowData) {
+      const emptyMass = rowData["Mass (Empty) (kg)"] || 0;
+      const wineMass = rowData["Mass (Wine) (kg)"] || 0;
+      const oilMass = rowData["Mass (Oil)"] || rowData["Mass (Oil) (kg)"] || 0;
+      const volume = rowData["Internal Volume (mm^3)"] || 0;
+      
+      document.getElementById('model-weight-empty').textContent = 
+        emptyMass ? `${emptyMass.toFixed(2)} kg` : '-';
+      document.getElementById('model-weight-wine').textContent = 
+        wineMass ? `${(emptyMass + wineMass).toFixed(2)} kg` : '-';
+      document.getElementById('model-weight-oil').textContent = 
+        oilMass ? `${(emptyMass + oilMass).toFixed(2)} kg` : '-';
+      document.getElementById('model-volume').textContent = 
+        volume ? `${(volume / 1e6).toFixed(2)} L` : '-';
+    } else {
+      // Try to find data from rawRows
+      const amphoraData = rawRows.find(r => 
+        r[AMPH_COL(r)] === amphoraName || 
+        normalizeAmphora(r[AMPH_COL(r)]) === normalizeAmphora(amphoraName)
+      );
+      
+      if (amphoraData) {
+        this._displayPopup(amphoraName, amphoraData);
+        return;
+      }
+      
+      // No data available
+      document.getElementById('model-weight-empty').textContent = '-';
+      document.getElementById('model-weight-wine').textContent = '-';
+      document.getElementById('model-weight-oil').textContent = '-';
+      document.getElementById('model-volume').textContent = '-';
+    }
+    
+    // Load model
+    this.loadModel(amphoraName);
+    
+    // Position popup in top-right corner of chart area
+    this._updatePosition();
+    this.popup.classList.add('show');
+    
+    // Start animation
+    this.animate();
+  }
+  
+  hide() {
+    // Clear any pending show timeout
+    if (this.showTimeout) {
+      clearTimeout(this.showTimeout);
+      this.showTimeout = null;
+    }
+    
+    // Add a small delay to prevent flicker when moving between elements
+    this.hideTimeout = setTimeout(() => {
+      this.popup.classList.remove('show');
+      this.currentAmphora = null;
+      
+      // Stop animation
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId);
+        this.animationId = null;
+      }
+      
+      // Hide loading/error messages
+      document.getElementById('model-loading').style.display = 'none';
+      document.getElementById('model-error').style.display = 'none';
+    }, 150); // Slightly longer delay for smoother transitions
+  }
+  
+  animate() {
+    if (!this.popup.classList.contains('show')) return;
+    
+    this.animationId = requestAnimationFrame(() => this.animate());
+    
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+  
+  attachHoverListeners() {
+    // No hover listeners for amphora selection buttons
+    // Only chart data points and ranking table will trigger popups
+  }
+}
+
+/* -------------------------------------------------------------
+   10.  Initialization
 ------------------------------------------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   const chartBody = document.querySelector("#chart-wrap .card-body");
@@ -1359,6 +1949,58 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeSelectedColumns();
   buildColumnControls();
   attachColumnControlListeners();
+  
+  // Initialize 3D model viewer
+  if (typeof THREE !== 'undefined' && typeof THREE.STLLoader !== 'undefined') {
+    modelViewer = new ModelViewer();
+    modelViewer.attachHoverListeners();
+    
+    // Log some example amphora names for debugging
+    console.log('=== 3D Model System Ready ===');
+    console.log('Hover over amphora names to see 3D models');
+    console.log('Models should be in: docs/models/');
+    console.log('File naming examples:');
+    console.log('  "Africana 2A_rect" -> africana_2a.stl');
+    console.log('  "Dressel 1A" -> dressel_1a.stl');
+    console.log('  "Seagean" -> seaegean.stl (note spelling)');
+    console.log('\nTo check all model requirements, run in console:');
+    console.log('  checkModelRequirements()');
+    
+    // Add debug helper
+    window.checkModelRequirements = function() {
+      if (!rawRows || rawRows.length === 0) {
+        console.error('No data loaded yet. Please wait for data to load and try again.');
+        return;
+      }
+
+      const uniqueAmphorae = new Set();
+      rawRows.forEach(row => {
+        const amp = row[AMPH_COL(row)];
+        if (amp) {
+          uniqueAmphorae.add(amp);
+        }
+      });
+      
+      console.log('\n=== Required STL Files ===');
+      const fileMap = new Map();
+      
+      [...uniqueAmphorae].sort().forEach(amp => {
+        const normalized = normalizeAmphora(amp);
+        const filename = modelViewer.formatModelFileName(amp);
+        
+        if (!fileMap.has(filename)) {
+          fileMap.set(filename, []);
+        }
+        fileMap.get(filename).push(amp);
+      });
+      
+      [...fileMap.entries()].sort().forEach(([filename, names]) => {
+        console.log(`${filename} <- [${names.join(', ')}]`);
+      });
+    };
+  } else {
+    console.warn('Three.js not loaded - 3D model preview disabled');
+  }
   
   attachListeners();
   onControlChange();
