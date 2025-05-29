@@ -837,12 +837,37 @@ function displayRankingTable() {
   );
   
   if (!rankings.length) {
+    let alerts = '';
+    let tableContent = html;
+    
+    // Extract alerts
+    const alertRegex = /<div class="alert[\s\S]*?<\/div>/g;
+    const alertMatches = html.match(alertRegex);
+    if (alertMatches) {
+      alerts = alertMatches.join('');
+      tableContent = html.replace(alertRegex, '');
+    }
+    
+    // Build final HTML with scrollable table
     tableEl.innerHTML = `
-      <div class="alert alert-info">
-        <strong>No complete data available.</strong><br>
-        Please select at least one amphora with complete test data.
-      </div>`;
-    return;
+      ${alerts}
+      <div class="table-responsive" style="max-height: calc(100vh - 400px); overflow-y: auto; overflow-x: auto; position: relative;">
+        ${tableContent}
+      </div>
+    `;
+    
+    // Make headers sticky (add after setting innerHTML)
+    const tableElement = tableEl.querySelector('table');
+    if (tableElement) {
+      const thead = tableElement.querySelector('thead');
+      if (thead) {
+        thead.style.position = 'sticky';
+        thead.style.top = '0';
+        thead.style.backgroundColor = '#fff';
+        thead.style.zIndex = '10';
+        thead.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+      }
+    }
   }
   
   // Apply current sort
@@ -1033,16 +1058,16 @@ function displayRankingTable() {
     }
     html += `<td>${amp.name || '–'}</td>`;
     if (selectedColumns.has("holdRank")) html += `<td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>`;
-    if (selectedColumns.has("holdTensile")) html += `<td>${safeFormat(amp.holdTensile)} MPa</td>`;
+    if (selectedColumns.has("holdTensile")) html += `<td>${safeFormat(amp.holdTensile)}</td>`;
     if (selectedColumns.has("dropRank")) html += `<td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>`;
-    if (selectedColumns.has("dropTensile")) html += `<td>${safeFormat(amp.dropCompressive)} MPa</td>`;
+    if (selectedColumns.has("dropTensile")) html += `<td>${safeFormat(amp.dropCompressive)}</td>`;
     if (selectedColumns.has("rectRank")) html += `<td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>`;
-    if (selectedColumns.has("rectTensile")) html += `<td>${safeFormat(amp.rectTensile)} MPa</td>`;
-    if (selectedColumns.has("rectLoad")) html += `<td>${safeFormat(amp.rectLoad)} N</td>`;
+    if (selectedColumns.has("rectTensile")) html += `<td>${safeFormat(amp.rectTensile)}</td>`;
+    if (selectedColumns.has("rectLoad")) html += `<td>${safeFormat(amp.rectLoad)}</td>`;
     if (selectedColumns.has("rectFoS")) html += `<td>${safeFormat(amp.rectFoS)}</td>`;
     if (selectedColumns.has("hexRank")) html += `<td>${amp.hexRank ? '#' + amp.hexRank : '–'}</td>`;
-    if (selectedColumns.has("hexTensile")) html += `<td>${safeFormat(amp.hexTensile)} MPa</td>`;
-    if (selectedColumns.has("hexLoad")) html += `<td>${safeFormat(amp.hexLoad)} N</td>`;
+    if (selectedColumns.has("hexTensile")) html += `<td>${safeFormat(amp.hexTensile)}</td>`;
+    if (selectedColumns.has("hexLoad")) html += `<td>${safeFormat(amp.hexLoad)}</td>`;
     if (selectedColumns.has("hexFoS")) html += `<td>${safeFormat(amp.hexFoS)}</td>`;
     html += `</tr>`;
   });
@@ -2454,3 +2479,1307 @@ document.addEventListener("DOMContentLoaded", () => {
   attachListeners();
   onControlChange();
 });
+
+/* -------------------------------------------------------------
+   COMPLETE ASTM Ranking System with Simplified Display
+   Add this entire code to the END of your script.js file
+------------------------------------------------------------- */
+
+// Store the original displayRankingTable function
+window.displayRankingTableOriginal = displayRankingTable;
+
+// ASTM Ranking System Class
+class ASTMRankingSystem {
+  constructor() {
+    this.config = {
+      outlierDetection: {
+        method: 'grubbs',
+        significanceLevel: 0.05,
+        maxIterations: 5
+      },
+      interpolation: {
+        minDataPoints: 3
+      },
+      ranking: {
+        weights: {
+          rectTensile: 0.20,
+          hexTensile: 0.20,
+          holdTensile: 0.25,
+          dropCompressive: 0.25,
+          volumeEfficiency: 0.10
+        }
+      },
+      safetyFactors: {
+        minSampleSize: 3,
+        interpolated: 1.15,
+        extrapolated: 1.25
+      }
+    };
+  }
+
+  // Main ranking function
+  calculateRankings(rawRows, selectedAmphorae) {
+    if (!selectedAmphorae || !selectedAmphorae.length) return [];
+    
+    const preparedData = this.prepareData(rawRows, selectedAmphorae);
+    const processedData = this.processAllTestTypes(preparedData);
+    const completeAmphorae = this.filterCompleteAmphorae(processedData);
+    
+    if (completeAmphorae.length === 0) return [];
+    
+    const referencePoints = this.findReferencePoints(processedData);
+    const comparisonData = this.createComparisonMatrix(
+      processedData, 
+      completeAmphorae, 
+      referencePoints
+    );
+    const rankings = this.applyTOPSIS(comparisonData);
+    
+    this.calculateSubRankings(rankings, processedData);
+    this.addQualityMetrics(rankings, processedData);
+    
+    return rankings;
+  }
+
+  prepareData(rawRows, selectedAmphorae) {
+    const data = {
+      stack: { rect: {}, hex: {} },
+      hold: {},
+      drop: {}
+    };
+    
+    rawRows.forEach(row => {
+      const amphora = this.normalizeAmphora(row[this.AMPH_COL(row)]);
+      const baseTest = this.baseTest(row.Test);
+      
+      if (!selectedAmphorae.some(a => this.normalizeAmphora(a) === amphora)) {
+        return;
+      }
+      
+      if (baseTest === 'Stack') {
+        const pattern = this.patternOf(row.Test).toLowerCase();
+        if (!data.stack[pattern][amphora]) {
+          data.stack[pattern][amphora] = [];
+        }
+        data.stack[pattern][amphora].push(this.extractStackData(row));
+      } else if (baseTest === 'Hold') {
+        if (!data.hold[amphora]) {
+          data.hold[amphora] = [];
+        }
+        data.hold[amphora].push(this.extractHoldData(row));
+      } else if (baseTest === 'Drop') {
+        if (!data.drop[amphora]) {
+          data.drop[amphora] = [];
+        }
+        data.drop[amphora].push(this.extractDropData(row));
+      }
+    });
+    
+    return data;
+  }
+
+  // In the ASTMRankingSystem class, replace the processAllTestTypes method with this enhanced version:
+
+  processAllTestTypes(data) {
+    // First pass: find the minimum sample size across all tests
+    let minSampleSize = Infinity;
+    
+    // Check stack tests
+    ['rect', 'hex'].forEach(pattern => {
+      Object.entries(data.stack[pattern]).forEach(([amphora, samples]) => {
+        if (samples && samples.length > 0) {
+          minSampleSize = Math.min(minSampleSize, samples.length);
+        }
+      });
+    });
+    
+    // Check hold tests
+    Object.entries(data.hold).forEach(([amphora, samples]) => {
+      if (samples && samples.length > 0) {
+        minSampleSize = Math.min(minSampleSize, samples.length);
+      }
+    });
+    
+    // Check drop tests
+    Object.entries(data.drop).forEach(([amphora, samples]) => {
+      if (samples && samples.length > 0) {
+        minSampleSize = Math.min(minSampleSize, samples.length);
+      }
+    });
+    
+    // Ensure we have at least 3 samples for statistical validity
+    minSampleSize = Math.max(minSampleSize, 3);
+    
+    console.log(`Normalized outlier detection using n=${minSampleSize} (smallest dataset size)`);
+    
+    // Second pass: process with normalized sample size
+    const processed = {
+      stack: { rect: {}, hex: {} },
+      hold: {},
+      drop: {}
+    };
+    
+    // Process stack tests
+    ['rect', 'hex'].forEach(pattern => {
+      Object.entries(data.stack[pattern]).forEach(([amphora, samples]) => {
+        processed.stack[pattern][amphora] = this.processSamples(samples, 'stack', minSampleSize);
+      });
+    });
+    
+    // Process hold tests
+    Object.entries(data.hold).forEach(([amphora, samples]) => {
+      processed.hold[amphora] = this.processSamples(samples, 'hold', minSampleSize);
+    });
+    
+    // Process drop tests
+    Object.entries(data.drop).forEach(([amphora, samples]) => {
+      processed.drop[amphora] = this.processSamples(samples, 'drop', minSampleSize);
+    });
+    
+    return processed;
+  }
+
+  // Update processSamples to accept maxSampleSize parameter
+  processSamples(samples, testType, maxSampleSize = null) {
+    if (!samples || samples.length === 0) {
+      return { valid: false, sampleSize: 0 };
+    }
+    
+    // If we have more samples than maxSampleSize, select a subset
+    let samplesForOutlierDetection = samples;
+    if (maxSampleSize && samples.length > maxSampleSize) {
+      // Option 1: Take the most recent samples
+      // samplesForOutlierDetection = samples.slice(-maxSampleSize);
+      
+      // Option 2: Take evenly distributed samples
+      samplesForOutlierDetection = this.selectEvenlyDistributed(samples, maxSampleSize);
+      
+      // Option 3: Random sampling (less preferred for reproducibility)
+      // samplesForOutlierDetection = this.randomSample(samples, maxSampleSize);
+    }
+    
+    // Remove outliers only from the subset
+    const cleanSubset = this.removeOutliers(samplesForOutlierDetection, testType);
+    
+    // Identify which samples were kept after outlier removal
+    const keptIndices = new Set();
+    cleanSubset.forEach(cleanSample => {
+      const index = samples.findIndex(s => 
+        s.tensile === cleanSample.tensile && 
+        s.load === cleanSample.load &&
+        s.fos === cleanSample.fos
+      );
+      if (index !== -1) keptIndices.add(index);
+    });
+    
+    // If we had to subset, apply the outlier detection results proportionally to the full dataset
+    let cleanSamples;
+    if (maxSampleSize && samples.length > maxSampleSize) {
+      // Calculate outlier ratio from subset
+      const outlierRatio = (samplesForOutlierDetection.length - cleanSubset.length) / samplesForOutlierDetection.length;
+      
+      // Apply similar ratio to full dataset
+      const expectedCleanSize = Math.round(samples.length * (1 - outlierRatio));
+      
+      // Sort samples by their test values and remove extreme values
+      const values = this.extractTestValues(samples, testType);
+      const sortedIndices = values
+        .map((v, i) => ({ value: v, index: i }))
+        .sort((a, b) => a.value - b.value)
+        .map(item => item.index);
+      
+      // Remove outliers from both ends
+      const outliersToRemove = samples.length - expectedCleanSize;
+      const removeFromEachEnd = Math.floor(outliersToRemove / 2);
+      const removeFromStart = removeFromEachEnd;
+      const removeFromEnd = outliersToRemove - removeFromStart;
+      
+      const outlierIndices = new Set([
+        ...sortedIndices.slice(0, removeFromStart),
+        ...sortedIndices.slice(-removeFromEnd)
+      ]);
+      
+      cleanSamples = samples.filter((_, i) => !outlierIndices.has(i));
+    } else {
+      // If no subsetting needed, use standard outlier removal
+      cleanSamples = cleanSubset;
+    }
+    
+    // Calculate statistics
+    const stats = this.calculateStatistics(cleanSamples);
+    
+    // Assess sample quality
+    const quality = this.assessSampleQuality(cleanSamples.length);
+    
+    return {
+      valid: true,
+      originalSamples: samples,
+      cleanSamples: cleanSamples,
+      sampleSize: cleanSamples.length,
+      statistics: stats,
+      quality: quality,
+      outlierCount: samples.length - cleanSamples.length,
+      normalizedDetection: maxSampleSize && samples.length > maxSampleSize,
+      detectionSampleSize: Math.min(samples.length, maxSampleSize || samples.length)
+    };
+  }
+
+  // Helper method to select evenly distributed samples
+  selectEvenlyDistributed(samples, n) {
+    if (samples.length <= n) return samples;
+    
+    const result = [];
+    const step = (samples.length - 1) / (n - 1);
+    
+    for (let i = 0; i < n; i++) {
+      const index = Math.round(i * step);
+      result.push(samples[index]);
+    }
+    
+    return result;
+  }
+
+  // Alternative: Random sampling (if preferred)
+  randomSample(samples, n) {
+    if (samples.length <= n) return samples;
+    
+    const shuffled = [...samples].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, n);
+  }
+
+  // Update the quality metrics to include normalization info
+  addQualityMetrics(rankings, processedData) {
+    rankings.forEach(ranking => {
+      const amphora = ranking.amphora;
+      const metrics = {
+        rectQuality: this.getTestQuality(processedData.stack.rect[amphora]),
+        hexQuality: this.getTestQuality(processedData.stack.hex[amphora]),
+        holdQuality: this.getTestQuality(processedData.hold[amphora]),
+        dropQuality: this.getTestQuality(processedData.drop[amphora]),
+        // Add normalization indicators
+        rectNormalized: processedData.stack.rect[amphora]?.normalizedDetection || false,
+        hexNormalized: processedData.stack.hex[amphora]?.normalizedDetection || false,
+        holdNormalized: processedData.hold[amphora]?.normalizedDetection || false,
+        dropNormalized: processedData.drop[amphora]?.normalizedDetection || false
+      };
+      
+      // Overall quality score
+      const qualityScores = Object.values(metrics)
+        .filter(v => typeof v === 'number' && v !== null);
+      metrics.overall = qualityScores.length > 0 
+        ? this.mean(qualityScores) 
+        : 0;
+      
+      ranking.qualityMetrics = metrics;
+    });
+  }
+
+  processSamples(samples, testType) {
+    if (!samples || samples.length === 0) {
+      return { valid: false, sampleSize: 0 };
+    }
+    
+    const cleanSamples = this.removeOutliers(samples, testType);
+    const stats = this.calculateStatistics(cleanSamples);
+    const quality = this.assessSampleQuality(cleanSamples.length);
+    
+    return {
+      valid: true,
+      originalSamples: samples,
+      cleanSamples: cleanSamples,
+      sampleSize: cleanSamples.length,
+      statistics: stats,
+      quality: quality,
+      outlierCount: samples.length - cleanSamples.length
+    };
+  }
+
+  removeOutliers(samples, testType) {
+    let cleanSamples = [...samples];
+    let iterations = 0;
+    
+    while (iterations < this.config.outlierDetection.maxIterations) {
+      if (cleanSamples.length < 3) break;
+      
+      const values = this.extractTestValues(cleanSamples, testType);
+      const result = this.grubbsTest(values);
+      
+      if (result.outlierFound) {
+        cleanSamples.splice(result.outlierIndex, 1);
+      } else {
+        break;
+      }
+      iterations++;
+    }
+    
+    return cleanSamples;
+  }
+
+  grubbsTest(values) {
+    const n = values.length;
+    if (n < 3) return { outlierFound: false };
+    
+    const mean = this.mean(values);
+    const stdDev = this.stdDev(values, mean);
+    
+    if (stdDev === 0) return { outlierFound: false };
+    
+    let maxG = 0;
+    let maxIndex = -1;
+    
+    values.forEach((value, i) => {
+      const g = Math.abs(value - mean) / stdDev;
+      if (g > maxG) {
+        maxG = g;
+        maxIndex = i;
+      }
+    });
+    
+    const criticalValue = this.grubbsCriticalValue(n, this.config.outlierDetection.significanceLevel);
+    
+    return {
+      outlierFound: maxG > criticalValue,
+      outlierIndex: maxIndex,
+      gStatistic: maxG,
+      criticalValue: criticalValue
+    };
+  }
+
+  calculateStatistics(samples) {
+    if (samples.length === 0) {
+      return { valid: false };
+    }
+    
+    const values = samples.map(s => s.tensile || s.compressive || 0);
+    const mean = this.mean(values);
+    const stdDev = this.stdDev(values, mean);
+    
+    const sem = stdDev / Math.sqrt(samples.length);
+    const tValue = this.tDistributionValue(samples.length - 1, 0.025);
+    const ci95Lower = mean - tValue * sem;
+    const ci95Upper = mean + tValue * sem;
+    
+    let bootstrap = null;
+    if (samples.length < 10) {
+      bootstrap = this.bootstrapConfidence(values);
+    }
+    
+    return {
+      valid: true,
+      mean: mean,
+      median: this.median(values),
+      stdDev: stdDev,
+      sem: sem,
+      ci95: { lower: ci95Lower, upper: ci95Upper },
+      bootstrap: bootstrap,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      cv: stdDev / mean
+    };
+  }
+
+  findReferencePoints(processedData) {
+    const refs = {
+      rect: { load: 0, fos: 1.0 },
+      hex: { load: 0, fos: 1.0 }
+    };
+    
+    ['rect', 'hex'].forEach(pattern => {
+      const loads = [];
+      
+      Object.values(processedData.stack[pattern]).forEach(ampData => {
+        if (!ampData.valid) return;
+        
+        ampData.cleanSamples.forEach(sample => {
+          if (sample.fos >= 0.9 && sample.fos <= 1.1) {
+            loads.push({
+              load: sample.load,
+              fos: sample.fos,
+              diff: Math.abs(sample.fos - 1.0)
+            });
+          }
+        });
+      });
+      
+      if (loads.length > 0) {
+        loads.sort((a, b) => a.diff - b.diff);
+        refs[pattern].load = this.mean(loads.slice(0, 5).map(l => l.load));
+      } else {
+        const safeLoads = [];
+        Object.values(processedData.stack[pattern]).forEach(ampData => {
+          if (!ampData.valid) return;
+          const safeSamples = ampData.cleanSamples.filter(s => s.fos >= 1);
+          if (safeSamples.length > 0) {
+            safeLoads.push(Math.max(...safeSamples.map(s => s.load)));
+          }
+        });
+        refs[pattern].load = safeLoads.length > 0 ? this.mean(safeLoads) : 1000;
+      }
+    });
+    
+    return refs;
+  }
+
+  createComparisonMatrix(processedData, amphorae, referencePoints) {
+    const matrix = [];
+    
+    amphorae.forEach(amphora => {
+      const row = {
+        amphora: amphora,
+        data: {}
+      };
+      
+      ['rect', 'hex'].forEach(pattern => {
+        const ampData = processedData.stack[pattern][amphora];
+        if (ampData && ampData.valid) {
+          const interpolated = this.interpolateToLoad(
+            ampData.cleanSamples,
+            referencePoints[pattern].load
+          );
+          
+          row.data[`${pattern}Tensile`] = interpolated.tensile;
+          row.data[`${pattern}Load`] = interpolated.load;
+          row.data[`${pattern}FoS`] = interpolated.fos;
+          row.data[`${pattern}Confidence`] = interpolated.confidence;
+        }
+      });
+      
+      const holdData = processedData.hold[amphora];
+      if (holdData && holdData.valid) {
+        row.data.holdTensile = holdData.statistics.mean;
+        row.data.holdConfidence = this.calculateConfidence(holdData);
+      }
+      
+      const dropData = processedData.drop[amphora];
+      if (dropData && dropData.valid) {
+        row.data.dropCompressive = dropData.statistics.mean;
+        row.data.dropConfidence = this.calculateConfidence(dropData);
+      }
+      
+      const volumeData = this.findVolumeData(amphora, processedData);
+      if (volumeData) {
+        row.data.volumeEfficiency = volumeData;
+      }
+      
+      matrix.push(row);
+    });
+    
+    return matrix;
+  }
+
+  interpolateToLoad(samples, targetLoad) {
+    const sorted = samples.sort((a, b) => a.load - b.load);
+    
+    let lower = null;
+    let upper = null;
+    
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].load <= targetLoad) {
+        lower = sorted[i];
+      }
+      if (sorted[i].load >= targetLoad && !upper) {
+        upper = sorted[i];
+      }
+    }
+    
+    if (!lower && !upper) {
+      return { tensile: 0, load: targetLoad, fos: 0, confidence: 0 };
+    }
+    
+    if (!lower) {
+      return {
+        tensile: upper.tensile * this.config.safetyFactors.extrapolated,
+        load: targetLoad,
+        fos: upper.fos,
+        confidence: 0.5
+      };
+    }
+    
+    if (!upper) {
+      return {
+        tensile: lower.tensile * this.config.safetyFactors.extrapolated,
+        load: targetLoad,
+        fos: lower.fos,
+        confidence: 0.5
+      };
+    }
+    
+    const ratio = (targetLoad - lower.load) / (upper.load - lower.load);
+    const tensile = lower.tensile + ratio * (upper.tensile - lower.tensile);
+    const fos = lower.fos + ratio * (upper.fos - lower.fos);
+    
+    return {
+      tensile: tensile * this.config.safetyFactors.interpolated,
+      load: targetLoad,
+      fos: fos,
+      confidence: 0.8
+    };
+  }
+
+  applyTOPSIS(comparisonMatrix) {
+    const criteria = [
+      { name: 'rectTensile', type: 'cost', weight: this.config.ranking.weights.rectTensile },
+      { name: 'hexTensile', type: 'cost', weight: this.config.ranking.weights.hexTensile },
+      { name: 'holdTensile', type: 'cost', weight: this.config.ranking.weights.holdTensile },
+      { name: 'dropCompressive', type: 'cost', weight: this.config.ranking.weights.dropCompressive },
+      { name: 'volumeEfficiency', type: 'benefit', weight: this.config.ranking.weights.volumeEfficiency }
+    ];
+    
+    const normalized = this.normalizeMatrix(comparisonMatrix, criteria);
+    const weighted = this.applyWeights(normalized, criteria);
+    const { positive, negative } = this.findIdealSolutions(weighted, criteria);
+    
+    const rankings = weighted.map(row => {
+      let dPositive = 0;
+      let dNegative = 0;
+      
+      criteria.forEach(criterion => {
+        const value = row.weighted[criterion.name] || 0;
+        dPositive += Math.pow(value - positive[criterion.name], 2);
+        dNegative += Math.pow(value - negative[criterion.name], 2);
+      });
+      
+      dPositive = Math.sqrt(dPositive);
+      dNegative = Math.sqrt(dNegative);
+      
+      const closeness = dNegative / (dPositive + dNegative + 1e-10);
+      
+      return {
+        name: row.amphora,
+        amphora: row.amphora,
+        closeness: closeness,
+        dPositive: dPositive,
+        dNegative: dNegative,
+        rectTensile: row.data.rectTensile || 0,
+        rectLoad: row.data.rectLoad || 0,
+        rectFoS: row.data.rectFoS || 0,
+        hexTensile: row.data.hexTensile || 0,
+        hexLoad: row.data.hexLoad || 0,
+        hexFoS: row.data.hexFoS || 0,
+        holdTensile: row.data.holdTensile || 0,
+        dropCompressive: row.data.dropCompressive || 0,
+        volume: row.data.volume || 0
+      };
+    });
+    
+    rankings.sort((a, b) => b.closeness - a.closeness);
+    
+    rankings.forEach((item, index) => {
+      item.overallRank = index + 1;
+      item.overallScore = item.closeness;
+    });
+    
+    return rankings;
+  }
+
+  normalizeMatrix(matrix, criteria) {
+    const normalized = [];
+    
+    const factors = {};
+    criteria.forEach(criterion => {
+      const values = matrix
+        .map(row => row.data[criterion.name] || 0)
+        .filter(v => v > 0);
+      
+      if (values.length > 0) {
+        factors[criterion.name] = Math.sqrt(
+          values.reduce((sum, v) => sum + v * v, 0)
+        );
+      } else {
+        factors[criterion.name] = 1;
+      }
+    });
+    
+    matrix.forEach(row => {
+      const normRow = {
+        amphora: row.amphora,
+        data: row.data,
+        normalized: {},
+        weighted: {}
+      };
+      
+      criteria.forEach(criterion => {
+        const value = row.data[criterion.name] || 0;
+        normRow.normalized[criterion.name] = factors[criterion.name] > 0 
+          ? value / factors[criterion.name] 
+          : 0;
+      });
+      
+      normalized.push(normRow);
+    });
+    
+    return normalized;
+  }
+
+  applyWeights(normalized, criteria) {
+    normalized.forEach(row => {
+      criteria.forEach(criterion => {
+        row.weighted[criterion.name] = 
+          row.normalized[criterion.name] * criterion.weight;
+      });
+    });
+    
+    return normalized;
+  }
+
+  findIdealSolutions(weighted, criteria) {
+    const positive = {};
+    const negative = {};
+    
+    criteria.forEach(criterion => {
+      const values = weighted
+        .map(row => row.weighted[criterion.name] || 0)
+        .filter(v => !isNaN(v));
+      
+      if (values.length === 0) {
+        positive[criterion.name] = 0;
+        negative[criterion.name] = 0;
+        return;
+      }
+      
+      if (criterion.type === 'benefit') {
+        positive[criterion.name] = Math.max(...values);
+        negative[criterion.name] = Math.min(...values);
+      } else {
+        positive[criterion.name] = Math.min(...values);
+        negative[criterion.name] = Math.max(...values);
+      }
+    });
+    
+    return { positive, negative };
+  }
+
+  calculateSubRankings(rankings, processedData) {
+    const rectValid = rankings.filter(r => r.rectTensile > 0);
+    rectValid.sort((a, b) => a.rectTensile - b.rectTensile);
+    rectValid.forEach((item, index) => {
+      const ranking = rankings.find(r => r.amphora === item.amphora);
+      if (ranking) ranking.rectRank = index + 1;
+    });
+    
+    const hexValid = rankings.filter(r => r.hexTensile > 0);
+    hexValid.sort((a, b) => a.hexTensile - b.hexTensile);
+    hexValid.forEach((item, index) => {
+      const ranking = rankings.find(r => r.amphora === item.amphora);
+      if (ranking) ranking.hexRank = index + 1;
+    });
+    
+    const holdValid = rankings.filter(r => r.holdTensile > 0);
+    holdValid.sort((a, b) => a.holdTensile - b.holdTensile);
+    holdValid.forEach((item, index) => {
+      const ranking = rankings.find(r => r.amphora === item.amphora);
+      if (ranking) ranking.holdRank = index + 1;
+    });
+    
+    const dropValid = rankings.filter(r => r.dropCompressive > 0);
+    dropValid.sort((a, b) => a.dropCompressive - b.dropCompressive);
+    dropValid.forEach((item, index) => {
+      const ranking = rankings.find(r => r.amphora === item.amphora);
+      if (ranking) ranking.dropRank = index + 1;
+    });
+  }
+
+  addQualityMetrics(rankings, processedData) {
+    rankings.forEach(ranking => {
+      const amphora = ranking.amphora;
+      const metrics = {
+        rectQuality: this.getTestQuality(processedData.stack.rect[amphora]),
+        hexQuality: this.getTestQuality(processedData.stack.hex[amphora]),
+        holdQuality: this.getTestQuality(processedData.hold[amphora]),
+        dropQuality: this.getTestQuality(processedData.drop[amphora])
+      };
+      
+      const qualityScores = Object.values(metrics).filter(q => q !== null);
+      metrics.overall = qualityScores.length > 0 
+        ? this.mean(qualityScores) 
+        : 0;
+      
+      ranking.qualityMetrics = metrics;
+    });
+  }
+
+  getTestQuality(testData) {
+    if (!testData || !testData.valid) return null;
+    
+    const quality = testData.quality;
+    const stats = testData.statistics;
+    
+    const sizeScore = quality.reliability;
+    const cvScore = stats.cv < 0.1 ? 1.0 : (stats.cv < 0.2 ? 0.8 : 0.6);
+    const outlierScore = 1 - (testData.outlierCount / testData.originalSamples.length);
+    
+    return (sizeScore * 0.5 + cvScore * 0.3 + outlierScore * 0.2);
+  }
+
+  // Statistical helper functions
+  mean(values) {
+    if (values.length === 0) return 0;
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  }
+  
+  median(values) {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  }
+  
+  stdDev(values, mean) {
+    if (values.length <= 1) return 0;
+    const variance = values.reduce((sum, val) => 
+      sum + Math.pow(val - mean, 2), 0
+    ) / (values.length - 1);
+    return Math.sqrt(variance);
+  }
+  
+  grubbsCriticalValue(n, alpha) {
+    const criticalValues = {
+      3: { 0.05: 1.155, 0.01: 1.155 },
+      4: { 0.05: 1.481, 0.01: 1.496 },
+      5: { 0.05: 1.715, 0.01: 1.764 },
+      6: { 0.05: 1.887, 0.01: 1.973 },
+      7: { 0.05: 2.020, 0.01: 2.139 },
+      8: { 0.05: 2.126, 0.01: 2.274 },
+      9: { 0.05: 2.215, 0.01: 2.387 },
+      10: { 0.05: 2.290, 0.01: 2.482 },
+      15: { 0.05: 2.549, 0.01: 2.806 },
+      20: { 0.05: 2.709, 0.01: 3.001 },
+      30: { 0.05: 2.908, 0.01: 3.236 }
+    };
+    
+    const ns = Object.keys(criticalValues).map(Number).sort((a, b) => a - b);
+    let closest = ns[0];
+    for (const nVal of ns) {
+      if (nVal <= n) closest = nVal;
+    }
+    
+    return criticalValues[closest][alpha] || 2.0;
+  }
+  
+  tDistributionValue(df, alpha) {
+    const tValues = {
+      1: { 0.05: 12.706, 0.025: 25.452, 0.01: 63.657 },
+      2: { 0.05: 4.303, 0.025: 6.205, 0.01: 9.925 },
+      3: { 0.05: 3.182, 0.025: 4.177, 0.01: 5.841 },
+      4: { 0.05: 2.776, 0.025: 3.495, 0.01: 4.604 },
+      5: { 0.05: 2.571, 0.025: 3.163, 0.01: 4.032 },
+      10: { 0.05: 2.228, 0.025: 2.634, 0.01: 3.169 },
+      20: { 0.05: 2.086, 0.025: 2.423, 0.01: 2.845 },
+      30: { 0.05: 2.042, 0.025: 2.360, 0.01: 2.750 },
+      60: { 0.05: 2.000, 0.025: 2.299, 0.01: 2.660 },
+      120: { 0.05: 1.980, 0.025: 2.270, 0.01: 2.617 }
+    };
+    
+    const dfs = Object.keys(tValues).map(Number).sort((a, b) => a - b);
+    let closest = dfs[0];
+    for (const dfVal of dfs) {
+      if (dfVal <= df) closest = dfVal;
+    }
+    
+    return tValues[closest][alpha] || 2.0;
+  }
+  
+  bootstrapConfidence(values, iterations = 1000) {
+    if (values.length < 3) return null;
+    
+    const means = [];
+    for (let i = 0; i < iterations; i++) {
+      const sample = [];
+      for (let j = 0; j < values.length; j++) {
+        sample.push(values[Math.floor(Math.random() * values.length)]);
+      }
+      means.push(this.mean(sample));
+    }
+    
+    means.sort((a, b) => a - b);
+    return {
+      mean: this.mean(means),
+      ci95Lower: means[Math.floor(iterations * 0.025)],
+      ci95Upper: means[Math.floor(iterations * 0.975)]
+    };
+  }
+  
+  assessSampleQuality(n) {
+    return {
+      sampleSize: n,
+      adequate: n >= this.config.safetyFactors.minSampleSize,
+      reliability: this.calculateSampleReliability(n),
+      method: n < 8 ? 'bootstrap' : 'parametric',
+      confidenceLevel: n >= 30 ? 0.95 : (n >= 10 ? 0.90 : 0.80)
+    };
+  }
+  
+  calculateSampleReliability(n) {
+    if (n >= 30) return 1.0;
+    if (n >= 20) return 0.95;
+    if (n >= 10) return 0.85;
+    if (n >= 5) return 0.70;
+    if (n >= 3) return 0.50;
+    return 0.30;
+  }
+  
+  calculateConfidence(testData) {
+    if (!testData || !testData.valid) return 0;
+    
+    const reliability = testData.quality.reliability;
+    const cv = testData.statistics.cv || 0;
+    const outlierRatio = testData.outlierCount / testData.originalSamples.length;
+    
+    const cvFactor = cv < 0.1 ? 1.0 : (cv < 0.2 ? 0.8 : 0.6);
+    const outlierFactor = 1 - outlierRatio;
+    
+    return reliability * 0.6 + cvFactor * 0.3 + outlierFactor * 0.1;
+  }
+  
+  // Data extraction helpers
+  extractStackData(row) {
+    return {
+      load: row['Load (N)'] || 0,
+      tensile: row['Max Tensile (MPa)'] || 0,
+      fos: row['Factor of Safety'] || 0,
+      layers: row['n (layers)'] || 0,
+      width: row['w (# pot)'] || 0,
+      length: row['l (# pot)'] || 0,
+      volume: row['Internal Volume (mm^3)'] || 0
+    };
+  }
+  
+  extractHoldData(row) {
+    return {
+      tensile: row['Max Tensile (MPa)'] || 0,
+      fillType: this.getFillType(row.Test)
+    };
+  }
+  
+  extractDropData(row) {
+    return {
+      compressive: row['Max Compressive (MPa)'] || row['Max Tensile (MPa)'] || 0,
+      height: row['Height (m)'] || 0
+    };
+  }
+  
+  extractTestValues(samples, testType) {
+    if (testType === 'stack' || testType === 'hold') {
+      return samples.map(s => s.tensile || 0);
+    } else if (testType === 'drop') {
+      return samples.map(s => s.compressive || 0);
+    }
+    return [];
+  }
+  
+  findVolumeData(amphora, processedData) {
+    const sources = [
+      processedData.stack.rect[amphora],
+      processedData.stack.hex[amphora],
+      processedData.hold[amphora]
+    ];
+    
+    for (const source of sources) {
+      if (source && source.originalSamples && source.originalSamples.length > 0) {
+        const sample = source.originalSamples[0];
+        if (sample.volume) return sample.volume / 1e6;
+      }
+    }
+    
+    return null;
+  }
+  
+  filterCompleteAmphorae(processedData) {
+    const amphorae = new Set();
+    
+    Object.keys(processedData.stack.rect).forEach(a => amphorae.add(a));
+    Object.keys(processedData.stack.hex).forEach(a => amphorae.add(a));
+    Object.keys(processedData.hold).forEach(a => amphorae.add(a));
+    Object.keys(processedData.drop).forEach(a => amphorae.add(a));
+    
+    return Array.from(amphorae).filter(amphora => {
+      const hasRect = processedData.stack.rect[amphora]?.valid;
+      const hasHex = processedData.stack.hex[amphora]?.valid;
+      const hasHold = processedData.hold[amphora]?.valid;
+      const hasDrop = processedData.drop[amphora]?.valid;
+      
+      return hasRect && hasHex && hasHold && hasDrop;
+    });
+  }
+  
+  // Utility functions
+  normalizeAmphora(name) {
+    if (!name) return '';
+    return String(name).replace(/[_\s]+(rect|hex)$/i, '').trim();
+  }
+  
+  baseTest(str) {
+    if (!str) return '';
+    return String(str).split(/[_(]/)[0].trim();
+  }
+  
+  patternOf(testStr) {
+    if (!testStr) return 'unknown';
+    testStr = String(testStr);
+    return /\bhex\b/i.test(testStr) ? 'Hex' :
+           /\brect\b/i.test(testStr) ? 'Rect' : 'unknown';
+  }
+  
+  getFillType(testName) {
+    if (!testName) return 'Empty';
+    const test = String(testName).toLowerCase();
+    if (test.includes('wine')) return 'Wine';
+    if (test.includes('oil')) return 'Oil';
+    return 'Empty';
+  }
+  
+  AMPH_COL(row) {
+    if (!row) return '';
+    if (row.hasOwnProperty('Amphora')) return 'Amphora';
+    if (row.hasOwnProperty('Amphorae')) return 'Amphorae';
+    const keys = Object.keys(row);
+    const amphoraKey = keys.find(k => k && k.toLowerCase().startsWith('amphora'));
+    return amphoraKey || '';
+  }
+}
+
+// Integration function
+function calculateRankingsASTM() {
+  const selected = getSelectedAmphorae();
+  if (!selected || !selected.length) return [];
+  
+  const rankingSystem = new ASTMRankingSystem();
+  const rankings = rankingSystem.calculateRankings(rawRows, selected);
+  
+  const formattedRankings = rankings.map(r => ({
+    name: r.name || r.amphora,
+    overallRank: r.overallRank,
+    overallScore: r.overallScore,
+    rectRank: r.rectRank || 0,
+    rectTensile: r.rectTensile || 0,
+    rectLoad: r.rectLoad || 0,
+    rectFoS: r.rectFoS || 0,
+    hexRank: r.hexRank || 0,
+    hexTensile: r.hexTensile || 0,
+    hexLoad: r.hexLoad || 0,
+    hexFoS: r.hexFoS || 0,
+    holdRank: r.holdRank || 0,
+    holdTensile: r.holdTensile || 0,
+    dropRank: r.dropRank || 0,
+    dropCompressive: r.dropCompressive || 0,
+    volume: r.volume || 0,
+    qualityScore: r.qualityMetrics ? r.qualityMetrics.overall : 0,
+    confidence: {
+      rect: r.qualityMetrics ? r.qualityMetrics.rectQuality : 0,
+      hex: r.qualityMetrics ? r.qualityMetrics.hexQuality : 0,
+      hold: r.qualityMetrics ? r.qualityMetrics.holdQuality : 0,
+      drop: r.qualityMetrics ? r.qualityMetrics.dropQuality : 0
+    }
+  }));
+  
+  return formattedRankings;
+}
+
+// Override displayRankingTable with simplified version
+displayRankingTable = function() {
+  const useASTM = !window.disableASTM;
+  
+  if (useASTM) {
+    const rankings = calculateRankingsASTM();
+    const tableEl = document.getElementById("rankingTable");
+    
+    if (!tableEl) {
+      console.error("Ranking table element not found");
+      return;
+    }
+    
+    const selected = getSelectedAmphorae();
+    const missingAmphorae = selected.filter(amp => 
+      !rankings.some(r => r.name === amp)
+    );
+    
+    if (!rankings.length) {
+      tableEl.innerHTML = `
+        <div class="alert alert-info">
+          <strong>No complete data available.</strong><br>
+          Please select at least one amphora with complete test data.
+          <br><small>ASTM E178 outlier detection and statistical analysis applied.</small>
+        </div>`;
+      return;
+    }
+    
+    // Apply current sort
+    const sortedRankings = [...rankings].sort((a, b) => {
+      let aVal, bVal;
+      
+      switch(currentSortColumn) {
+        case 'name':
+          aVal = a.name || '';
+          bVal = b.name || '';
+          break;
+        case 'overallRank':
+          aVal = a.overallRank || 999;
+          bVal = b.overallRank || 999;
+          break;
+        case 'holdRank':
+          aVal = a.holdRank || 999;
+          bVal = b.holdRank || 999;
+          break;
+        case 'holdTensile':
+          aVal = a.holdTensile || 0;
+          bVal = b.holdTensile || 0;
+          break;
+        case 'dropRank':
+          aVal = a.dropRank || 999;
+          bVal = b.dropRank || 999;
+          break;
+        case 'dropTensile':
+          aVal = a.dropCompressive || 0;
+          bVal = b.dropCompressive || 0;
+          break;
+        case 'rectRank':
+          aVal = a.rectRank || 999;
+          bVal = b.rectRank || 999;
+          break;
+        case 'rectTensile':
+          aVal = a.rectTensile || 0;
+          bVal = b.rectTensile || 0;
+          break;
+        case 'rectLoad':
+          aVal = a.rectLoad || 0;
+          bVal = b.rectLoad || 0;
+          break;
+        case 'rectFoS':
+          aVal = a.rectFoS || 0;
+          bVal = b.rectFoS || 0;
+          break;
+        case 'hexRank':
+          aVal = a.hexRank || 999;
+          bVal = b.hexRank || 999;
+          break;
+        case 'hexTensile':
+          aVal = a.hexTensile || 0;
+          bVal = b.hexTensile || 0;
+          break;
+        case 'hexLoad':
+          aVal = a.hexLoad || 0;
+          bVal = b.hexLoad || 0;
+          break;
+        case 'hexFoS':
+          aVal = a.hexFoS || 0;
+          bVal = b.hexFoS || 0;
+          break;
+        default:
+          aVal = 0;
+          bVal = 0;
+      }
+      
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return currentSortDirection === 'asc' 
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      } else {
+        return currentSortDirection === 'asc'
+          ? aVal - bVal
+          : bVal - aVal;
+      }
+    });
+    
+    const safeFormat = (value, decimals = 2) => {
+      if (value === undefined || value === null || isNaN(value) || value === 0) {
+        return "–";
+      }
+      return Number(value).toFixed(decimals);
+    };
+    
+    const createSortableHeader = (columnKey, label, rowspan = false) => {
+      const isCurrentSort = currentSortColumn === columnKey;
+      const arrow = isCurrentSort 
+        ? (currentSortDirection === 'asc' ? ' ↑' : ' ↓')
+        : '';
+      const style = 'cursor: pointer; user-select: none;';
+      const onclick = `onclick="sortRankingTable('${columnKey}')"`;
+      const title = 'title="Click to sort by this column"';
+      
+      if (rowspan) {
+        return `<th rowspan="2" style="${style}" ${onclick} ${title}>${label}${arrow}</th>`;
+      } else {
+        return `<th style="${style}" ${onclick} ${title}>${label}${arrow}</th>`;
+      }
+    };
+    
+    let html = '';
+    
+    // Simplified ASTM notice
+    html += `
+      <div class="alert alert-success mb-3" style="font-size: 0.9em;">
+        <strong>ASTM-Compliant Analysis Applied:</strong>
+        Outlier detection (ASTM E178), interpolation to reference loads, and TOPSIS multi-criteria ranking
+      </div>
+    `;
+    
+    if (missingAmphorae.length > 0 && missingAmphorae.some(amp => amp && amp.trim())) {
+      html += `
+        <div class="alert alert-warning mb-3">
+          <strong>Data Availability Notice:</strong><br>
+          The following selected amphorae do not appear in rankings due to incomplete data: 
+          <strong>${missingAmphorae.join(", ")}</strong><br>
+          Amphorae must have data for all test types (Stack in both Rect and Hex arrangements, Hold, and Drop) to be included.
+        </div>
+      `;
+    }
+    
+    // Build table
+    html += `<table class="table table-striped table-hover"><thead>`;
+    
+    // First header row
+    html += `<tr>`;
+    if (selectedColumns.has("overallRank")) {
+      html += createSortableHeader('overallRank', 'Overall<br>Rank', true);
+    }
+    html += createSortableHeader('name', 'Amphora', true);
+    
+    // Group headers
+    const hasHoldColumns = selectedColumns.has("holdRank") || selectedColumns.has("holdTensile");
+    const hasDropColumns = selectedColumns.has("dropRank") || selectedColumns.has("dropTensile");
+    const hasRectColumns = selectedColumns.has("rectRank") || selectedColumns.has("rectTensile") || 
+                          selectedColumns.has("rectLoad") || selectedColumns.has("rectFoS");
+    const hasHexColumns = selectedColumns.has("hexRank") || selectedColumns.has("hexTensile") || 
+                         selectedColumns.has("hexLoad") || selectedColumns.has("hexFoS");
+    
+    if (hasHoldColumns) {
+      const holdColCount = (selectedColumns.has("holdRank") ? 1 : 0) + 
+                          (selectedColumns.has("holdTensile") ? 1 : 0);
+      html += `<th colspan="${holdColCount}">Hold</th>`;
+    }
+    
+    if (hasDropColumns) {
+      const dropColCount = (selectedColumns.has("dropRank") ? 1 : 0) + 
+                          (selectedColumns.has("dropTensile") ? 1 : 0);
+      html += `<th colspan="${dropColCount}">Drop</th>`;
+    }
+    
+    if (hasRectColumns) {
+      const rectColCount = (selectedColumns.has("rectRank") ? 1 : 0) + 
+                          (selectedColumns.has("rectTensile") ? 1 : 0) +
+                          (selectedColumns.has("rectLoad") ? 1 : 0) +
+                          (selectedColumns.has("rectFoS") ? 1 : 0);
+      html += `<th colspan="${rectColCount}">Rect Stack</th>`;
+    }
+    
+    if (hasHexColumns) {
+      const hexColCount = (selectedColumns.has("hexRank") ? 1 : 0) + 
+                         (selectedColumns.has("hexTensile") ? 1 : 0) +
+                         (selectedColumns.has("hexLoad") ? 1 : 0) +
+                         (selectedColumns.has("hexFoS") ? 1 : 0);
+      html += `<th colspan="${hexColCount}">Hex Stack</th>`;
+    }
+    
+    html += `</tr>`;
+    
+    // Second header row
+    html += `<tr>`;
+    if (selectedColumns.has("holdRank")) html += createSortableHeader('holdRank', 'Rank');
+    if (selectedColumns.has("holdTensile")) html += createSortableHeader('holdTensile', 'Tensile (MPa)');
+    if (selectedColumns.has("dropRank")) html += createSortableHeader('dropRank', 'Rank');
+    if (selectedColumns.has("dropTensile")) html += createSortableHeader('dropTensile', 'Compressive (MPa)');
+    if (selectedColumns.has("rectRank")) html += createSortableHeader('rectRank', 'Rank');
+    if (selectedColumns.has("rectTensile")) html += createSortableHeader('rectTensile', 'Tensile (MPa)');
+    if (selectedColumns.has("rectLoad")) html += createSortableHeader('rectLoad', 'Load (N)');
+    if (selectedColumns.has("rectFoS")) html += createSortableHeader('rectFoS', 'FoS');
+    if (selectedColumns.has("hexRank")) html += createSortableHeader('hexRank', 'Rank');
+    if (selectedColumns.has("hexTensile")) html += createSortableHeader('hexTensile', 'Tensile (MPa)');
+    if (selectedColumns.has("hexLoad")) html += createSortableHeader('hexLoad', 'Load (N)');
+    if (selectedColumns.has("hexFoS")) html += createSortableHeader('hexFoS', 'FoS');
+    html += `</tr></thead><tbody>`;
+    
+    // In your displayRankingTable function, find the section where table rows are built
+// (look for "// Table rows" comment and the sortedRankings.forEach loop)
+// Replace that entire section with this:
+
+    // Table rows
+    sortedRankings.forEach((amp) => {
+      html += `<tr>`;
+      
+      if (selectedColumns.has("overallRank")) {
+        html += `<td><strong>${amp.overallRank || '–'}</strong></td>`;
+      }
+      
+      html += `<td>${amp.name || '–'}</td>`;
+      
+      // Hold columns
+      if (selectedColumns.has("holdRank")) {
+        html += `<td>${amp.holdRank ? '#' + amp.holdRank : '–'}</td>`;
+      }
+      if (selectedColumns.has("holdTensile")) {
+        html += `<td>${safeFormat(amp.holdTensile)}</td>`; // Removed " MPa"
+      }
+      
+      // Drop columns
+      if (selectedColumns.has("dropRank")) {
+        html += `<td>${amp.dropRank ? '#' + amp.dropRank : '–'}</td>`;
+      }
+      if (selectedColumns.has("dropTensile")) {
+        html += `<td>${safeFormat(amp.dropCompressive)}</td>`; // Removed " MPa"
+      }
+      
+      // Rect columns
+      if (selectedColumns.has("rectRank")) {
+        html += `<td>${amp.rectRank ? '#' + amp.rectRank : '–'}</td>`;
+      }
+      if (selectedColumns.has("rectTensile")) {
+        html += `<td>${safeFormat(amp.rectTensile)}</td>`; // Removed " MPa"
+      }
+      if (selectedColumns.has("rectLoad")) {
+        html += `<td>${safeFormat(amp.rectLoad)}</td>`; // Removed " N"
+      }
+      if (selectedColumns.has("rectFoS")) {
+        html += `<td>${safeFormat(amp.rectFoS)}</td>`;
+      }
+      
+      // Hex columns
+      if (selectedColumns.has("hexRank")) {
+        html += `<td>${amp.hexRank ? '#' + amp.hexRank : '–'}</td>`;
+      }
+      if (selectedColumns.has("hexTensile")) {
+        html += `<td>${safeFormat(amp.hexTensile)}</td>`; // Removed " MPa"
+      }
+      if (selectedColumns.has("hexLoad")) {
+        html += `<td>${safeFormat(amp.hexLoad)}</td>`; // Removed " N"
+      }
+      if (selectedColumns.has("hexFoS")) {
+        html += `<td>${safeFormat(amp.hexFoS)}</td>`;
+      }
+      
+      html += `</tr>`;
+    });
+    
+    html += `</tbody></table>`;
+    
+    tableEl.innerHTML = html;
+    
+    // Add hover listeners for 3D models
+    if (modelViewer) {
+      const tableRows = tableEl.querySelectorAll('tbody tr');
+      tableRows.forEach((row, index) => {
+        const nameCell = row.querySelector('td:nth-child(' + (selectedColumns.has("overallRank") ? '2' : '1') + ')');
+        if (nameCell) {
+          nameCell.style.cursor = 'pointer';
+          nameCell.addEventListener('mouseenter', (e) => {
+            const ampData = sortedRankings[index];
+            if (ampData) {
+              modelViewer.show(ampData.name, e.clientX - 10, e.clientY, null);
+            }
+          });
+          nameCell.addEventListener('mouseleave', () => {
+            modelViewer.hide();
+          });
+        }
+      });
+    }
+  } else {
+    window.displayRankingTableOriginal();
+  }
+};
+
+window.calculateRankingsASTM = calculateRankingsASTM;
+window.ASTMRankingSystem = ASTMRankingSystem;
+
+console.log('ASTM Ranking System loaded (simplified display). To disable: window.disableASTM = true');

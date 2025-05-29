@@ -241,3 +241,61 @@ html, body {
   }
   #chart-wrap { flex: 1 1 auto; }
 }
+
+/* Add this CSS to your docs/style.css file */
+
+/* Make ranking table scrollable */
+#rankingTable {
+  max-height: calc(100vh - 300px); /* Adjust based on your header height */
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+}
+
+/* Keep table headers sticky when scrolling */
+#rankingTable table thead {
+  position: sticky;
+  top: 0;
+  background-color: #fff;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Ensure proper styling for sticky headers */
+#rankingTable table thead th {
+  background-color: #fff;
+  position: relative;
+}
+
+/* Style scrollbar for better appearance */
+#rankingTable::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+#rankingTable::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 5px;
+}
+
+#rankingTable::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 5px;
+}
+
+#rankingTable::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Ensure alerts stay above table */
+#rankingTable .alert {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fix for responsive behavior */
+@media (max-width: 991.98px) {
+  #rankingTable {
+    max-height: calc(100vh - 350px);
+  }
+}
